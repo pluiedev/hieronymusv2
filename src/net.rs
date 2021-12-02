@@ -2,15 +2,21 @@ mod handshake;
 mod login;
 mod status;
 
+use std::sync::Arc;
+
+use aes::Aes128;
+use block_modes::{block_padding::NoPadding, BlockMode, Cfb8};
 use eyre::bail;
-use nom::{multi::length_data, IResult};
+use nom::{multi::length_data, HexDisplay, IResult};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
 };
-use tracing::{debug, instrument, trace, warn};
+use tracing::{debug, info, instrument, trace, warn};
 
 use crate::{
+    auth::{AuthSession, Keys},
+    config::Config,
     server::ServerHook,
     varint::{self, varint, VarInt},
 };
@@ -22,19 +28,34 @@ pub trait Packet: std::fmt::Debug {
 }
 
 type BoxedPacket<'a> = Box<dyn Packet + Send + Sync + 'a>;
-
+type AesCipher = Cfb8<Aes128, NoPadding>;
 pub struct Connection {
     socket: TcpStream,
     server: ServerHook,
     state: ConnectionState,
+    config: Arc<Config>,
+
+    keys: Keys,
+    auth_session: Option<AuthSession>,
+    cipher: Option<AesCipher>,
 }
 
 impl Connection {
-    pub const fn new(socket: TcpStream, server: ServerHook) -> Self {
+    pub const fn new(
+        socket: TcpStream,
+        server: ServerHook,
+        keys: Keys,
+        config: Arc<Config>,
+    ) -> Self {
         Self {
             socket,
             server,
             state: ConnectionState::Handshake,
+            config,
+
+            keys,
+            auth_session: None,
+            cipher: None,
         }
     }
 
@@ -44,7 +65,7 @@ impl Connection {
         loop {
             let read = self.socket.read(&mut buf).await?;
             if read == 0 {
-                warn!("End of stream");
+                info!("Connection reset");
                 return Ok(());
             }
 
@@ -64,7 +85,7 @@ impl Connection {
         }
     }
 
-    #[instrument(skip_all)]
+    #[instrument(skip(self))]
     pub async fn read_packet<'data>(&mut self, mut input: &'data [u8]) -> IResult<&'data [u8], ()> {
         loop {
             trace!(?input);
@@ -88,6 +109,15 @@ impl Connection {
                 return Ok((input, ()));
             }
         }
+    }
+
+    pub async fn kick(&mut self, reason: &str) -> eyre::Result<()> {
+        RequestBuilder::new(0x1a)
+            .var_blob(reason)
+            .send(self)
+            .await?;
+
+        Ok(())
     }
 }
 
@@ -182,13 +212,24 @@ impl RequestBuilder {
     }
 
     #[instrument(skip_all)]
-    pub async fn send(&self, conn: &mut Connection) -> eyre::Result<()> {
-        let header = varint::serialize_to_bytes(self.data.len() as u32);
+    pub async fn send(&mut self, conn: &mut Connection) -> eyre::Result<()> {
+        let mut header = varint::serialize_to_bytes(self.data.len() as u32);
         trace!(?header);
-        conn.socket.write(&header).await?;
+        trace!("\n{}", self.data.to_hex(16));
 
-        trace!(?self.data);
-        conn.socket.write(&self.data).await?;
+        if let Some(cipher) = &conn.cipher {
+            // we don't have any padding
+            // FIXME(leocth): what the heck? why does this take ownership?
+            conn.socket
+                .write(cipher.clone().encrypt(&mut header, 0)?)
+                .await?;
+            conn.socket
+                .write(cipher.clone().encrypt(&mut self.data, 0)?)
+                .await?;
+        } else {
+            conn.socket.write(&header).await?;
+            conn.socket.write(&self.data).await?;
+        }
         Ok(())
     }
 }

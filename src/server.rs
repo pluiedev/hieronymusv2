@@ -1,22 +1,25 @@
+use std::sync::Arc;
+
 use eyre::eyre;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
-use tracing::{trace, instrument};
+use tracing::{instrument, trace};
+
+use crate::config::Config;
 pub struct Server {
     rx: mpsc::Receiver<ServerEvent>,
+    config: Arc<Config>,
     version: Version,
-    players: Players,
+    players: Vec<Player>,
 }
 
 impl Server {
-    pub fn new(rx: mpsc::Receiver<ServerEvent>, max_players: usize) -> Self {
+    pub fn new(rx: mpsc::Receiver<ServerEvent>, config: Arc<Config>) -> Self {
         Server {
             rx,
+            config,
             version: Version::CURRENT,
-            players: Players {
-                maximum: max_players,
-                players: vec![],
-            },
+            players: vec![],
         }
     }
 
@@ -32,15 +35,16 @@ impl Server {
                                 "protocol": self.version.protocol_version,
                             },
                             "players": {
-                                "max": self.players.maximum,
-                                "online": self.players.num_online(),
-                                "sample": self.players.players.iter().take(5).collect::<Vec<_>>()
+                                "max": self.config.max_players,
+                                "online": self.players.len(),
+                                "sample": self.players.iter().take(5).collect::<Vec<_>>()
                             }
                         });
                         trace!(?json);
                         let json = serde_json::to_string(&json)?;
                         trace!(?json);
-                        tx.send(json).map_err(|_| eyre!("failed to send status data"))?;
+                        tx.send(json)
+                            .map_err(|_| eyre!("failed to send status data"))?;
                     }
                 }
             }
@@ -76,20 +80,11 @@ impl Ord for Version {
     }
 }
 
-pub struct Players {
-    maximum: usize,
-    players: Vec<Player>,
-}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Player {
     username: String,
     uuid: String, //Uuid,
-}
-impl Players {
-    fn num_online(&self) -> usize {
-        self.players.len()
-    }
 }
 
 #[derive(Clone)]
