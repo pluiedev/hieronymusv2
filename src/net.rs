@@ -1,44 +1,32 @@
 mod handshake;
 mod login;
-mod play;
 mod status;
 
-use std::net::SocketAddr;
-
 use eyre::bail;
-use nom::{
-    multi::{length_data, many0_count},
-    IResult,
-};
-use tokio::{io::AsyncReadExt, net::TcpStream, sync::mpsc::Sender};
-use tracing::{debug, instrument};
+use nom::{multi::length_data, IResult};
+use tokio::{io::AsyncReadExt, net::TcpStream};
+use tracing::{debug, instrument, trace, warn};
 
-use crate::{varint::varint, ServerRequest};
+use crate::{server::ServerHook, varint::varint};
+use async_trait::async_trait;
 
-trait PacketHandler<Packet> {
-    fn handle(&mut self, packet: Packet);
+#[async_trait]
+pub trait Packet: std::fmt::Debug {
+    async fn handle(&self, conn: &mut Connection) -> eyre::Result<()>;
 }
+
+type BoxedPacket<'a> = Box<dyn Packet + Send + Sync + 'a>;
 
 pub struct Connection {
     socket: TcpStream,
-    addr: SocketAddr,
-    server: Sender<ServerRequest>,
+    server: ServerHook,
     state: ConnectionState,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum ConnectionState {
-    Handshake,
-    Status,
-    Login,
-    Play,
-}
-
 impl Connection {
-    pub const fn new(socket: TcpStream, addr: SocketAddr, server: Sender<ServerRequest>) -> Self {
+    pub const fn new(socket: TcpStream, server: ServerHook) -> Self {
         Self {
             socket,
-            addr,
             server,
             state: ConnectionState::Handshake,
         }
@@ -50,19 +38,19 @@ impl Connection {
         loop {
             let read = self.socket.read(&mut buf).await?;
             if read == 0 {
-                bail!("End of stream");
+                warn!("End of stream");
+                return Ok(());
             }
-            debug!(data = tracing::field::debug(&buf[..read]));
 
             use ::nom::Err;
-            match self.read_packet(&buf[..read]) {
-                Ok((_, read_packets)) => {
-                    debug!(read_packets);
-                }
+            match self.read_packet(&buf[..read]).await {
+                Ok(_) => {}
                 Err(Err::Error(e) | Err::Failure(e)) => {
+                    debug!("TODO");
                     bail!("Parsing error: {:?}", e);
                 }
-                Err(Err::Incomplete(_)) => {
+                Err(Err::Incomplete(n)) => {
+                    debug!(?n, "needed more data!");
                     // ignore
                     continue;
                 }
@@ -71,16 +59,36 @@ impl Connection {
     }
 
     #[instrument(skip_all)]
-    pub fn read_packet<'data>(&mut self, input: &'data [u8]) -> IResult<&'data [u8], usize> {
-        many0_count(|input| {
-            let (input, data) = length_data(varint::<u32>)(input)?;
-            match self.state {
-                ConnectionState::Handshake => handshake::read_packet(self)(data),
-                ConnectionState::Status => status::read_packet(self)(data),
-                ConnectionState::Login => login::read_packet(self)(data),
+    pub async fn read_packet<'data>(&mut self, mut input: &'data [u8]) -> IResult<&'data [u8], ()> {
+        loop {
+            trace!(?input);
+            let (i, data) = length_data(varint::<u32>)(input)?;
+            input = i;
+            trace!(?input, ?data);
+            let (rem, packet) = match self.state {
+                ConnectionState::Handshake => handshake::read_packet(data),
+                ConnectionState::Status => status::read_packet(data),
+                ConnectionState::Login => login::read_packet(data),
                 ConnectionState::Play => todo!(),
             }?;
-            Ok((input, ()))
-        })(input)
+            trace!(?rem, ?packet);
+            assert!(rem.is_empty());
+
+            debug!(?packet, "Got packet");
+            //todo
+            packet.handle(self).await.unwrap();
+
+            if input.is_empty() {
+                return Ok((input, ()));
+            }
+        }
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum ConnectionState {
+    Handshake,
+    Status,
+    Login,
+    Play,
 }

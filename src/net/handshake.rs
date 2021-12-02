@@ -1,41 +1,40 @@
-use nom::{combinator::map, number::streaming::be_u16, sequence::tuple, IResult};
+use async_trait::async_trait;
+use nom::IResult;
+use nom_derive::Nom;
 use tracing::{debug, instrument};
-use tracing_subscriber::field::debug;
 
-use crate::{match_id_and_forward, net::PacketHandler, nom::{connection_state, var_str}};
+use crate::{
+    match_id_and_forward,
+    nom::{connection_state, var_str},
+    varint::varint,
+};
 
-use super::{Connection, ConnectionState};
+use super::{BoxedPacket, Connection, ConnectionState, Packet};
 
-pub fn read_packet<'data>(
-    conn: &mut Connection,
-) -> impl FnMut(&'data [u8]) -> IResult<&'data [u8], ()> + '_ {
+pub fn read_packet<'data>(input: &'data [u8]) -> IResult<&'data [u8], BoxedPacket<'data>> {
     match_id_and_forward! {
-        0 => map(
-            tuple((varint, var_str, be_u16, connection_state)),
-            |(protocol_version, server_address, server_port, next_state)| {
-                conn.handle(Handshake {
-                    protocol_version,
-                    server_address,
-                    server_port,
-                    next_state,
-                })
-            },
-        )
+        input;
+        0 => Handshake
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Nom)]
 pub struct Handshake<'a> {
-    protocol_version: u32,
-    server_address: &'a str,
-    server_port: u16,
+    #[nom(Parse = "varint")]
+    _protocol_version: u32,
+    #[nom(Parse = "var_str")]
+    _server_address: &'a str,
+    _server_port: u16,
+    #[nom(Parse = "connection_state")]
     next_state: ConnectionState,
 }
 
-impl PacketHandler<Handshake<'_>> for Connection {
-    #[instrument(skip_all)]
-    fn handle(&mut self, packet: Handshake<'_>) {
-        debug!(?packet, before = ?self.state, after = ?packet.next_state);
-        self.state = packet.next_state;
+#[async_trait]
+impl Packet for Handshake<'_> {
+    #[instrument(skip(conn))]
+    async fn handle(&self, conn: &mut Connection) -> eyre::Result<()> {
+        debug!(current = ?conn.state, next = ?self.next_state, "handshake - advancing to next state");
+        conn.state = self.next_state;
+        Ok(())
     }
 }

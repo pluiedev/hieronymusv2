@@ -1,13 +1,12 @@
-#![feature(never_type)]
-
-use std::net::SocketAddr;
-
-use eyre::bail;
-use server::{Server, ServerRequest};
-use tokio::{io::{AsyncReadExt, BufReader}, net::{TcpListener, TcpStream, ToSocketAddrs}, spawn, sync::mpsc::{self, Sender}};
-use tracing::{debug, info, instrument};
+use server::{Server, ServerHook};
+use tokio::{
+    net::{TcpListener, ToSocketAddrs},
+    spawn,
+    sync::mpsc,
+};
+use tracing::{info, instrument};
 use tracing_error::ErrorLayer;
-use tracing_subscriber::{EnvFilter, prelude::*};
+use tracing_subscriber::{prelude::*, EnvFilter};
 
 use crate::net::Connection;
 
@@ -23,19 +22,15 @@ async fn main() -> eyre::Result<()> {
 
     info!("hieronymus v2");
 
-    let server = Server {};
+    let (tx, rx) = mpsc::channel(100);
+    let mut server = Server::new(rx, 69);
+    let hook = ServerHook(tx);
 
-    let (tx, mut rx) = mpsc::channel(100);
+    spawn(listener_thread("127.0.0.1:25565", hook));
 
-    spawn(listener_thread("127.0.0.1:25565", tx));
+    server.event_loop().await;
 
-    loop {
-        while let Some(req) = rx.recv().await {
-            match req {
-
-            }
-        }
-    }
+    Ok(())
 }
 
 fn setup() -> eyre::Result<()> {
@@ -50,13 +45,13 @@ fn setup() -> eyre::Result<()> {
     Ok(())
 }
 
-async fn listener_thread(addr: impl ToSocketAddrs, tx: Sender<ServerRequest>) -> eyre::Result<()> {
+async fn listener_thread(addr: impl ToSocketAddrs, tx: ServerHook) -> eyre::Result<()> {
     let listener = TcpListener::bind(addr)
         .await
         .expect("Failed to listen on address");
 
-    while let Ok((socket, addr)) = listener.accept().await {
-        let conn = Connection::new(socket, addr, tx.clone());
+    while let Ok((socket, _addr)) = listener.accept().await {
+        let conn = Connection::new(socket, tx.clone());
         spawn(async move { conn.connection_loop().await.unwrap() });
     }
     Ok(())

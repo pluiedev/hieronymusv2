@@ -1,6 +1,6 @@
 //! `nom` utilities.
 
-use std::{convert::Infallible, net::IpAddr, ops::RangeFrom, str::FromStr};
+use std::{convert::Infallible, ops::RangeFrom};
 
 use nom::{
     combinator::{map, map_opt, map_res},
@@ -9,6 +9,7 @@ use nom::{
     number::streaming::be_u8,
     IResult, InputIter, InputLength, Parser, Slice, ToUsize,
 };
+use nom_derive::Nom;
 
 use crate::{
     net::ConnectionState,
@@ -17,15 +18,22 @@ use crate::{
 
 #[macro_export]
 macro_rules! match_id_and_forward {
-    {$($id:expr => $parser:expr),*} => {{
-        use nom::error::{ErrorKind, make_error};
-        use crate::varint::varint;
-        |i| match varint::<u32>(i)? {
+    {$input:expr; $($id:expr => $ty:ty),*} => {{
+        use nom::{Err::Failure, error::{ErrorKind, make_error}};
+        use tracing::trace;
+        let input = $input;
+        trace!(?input);
+        let (input, id) = crate::varint::varint::<u32>(input)?;
+        trace!(?input, ?id);
+        Ok(match id {
             $(
-                (i, $id) => $parser(i),
+                $id => {
+                    let (input, output) = <$ty as nom_derive::Parse<&[u8]>>::parse(input)?;
+                    (input, Box::new(output))
+                }
             )*
-            _ => Err(nom::Err::Failure(make_error(i, ErrorKind::Alt))),
-        }
+            _ => return Err(Failure(make_error($input, ErrorKind::Alt))),
+        })
     }};
 }
 
@@ -34,14 +42,12 @@ macro_rules! match_id_and_forward {
 /// A parser that consumes no data and only returns [`()`](unit).
 #[inline]
 pub fn nop<I>(i: I) -> IResult<I, ()> {
-    constant(())
-        .parse(i)
-        .map_err(|_| panic!("not possible"))
+    constant(()).parse(i).map_err(|_| panic!("not possible"))
 }
 
 /// A parser that consumes no data and only returns the constant supplied.
 #[inline]
-pub fn constant<I, T: Copy>(value: T) -> impl Parser<I, T, !> {
+pub fn constant<I, T: Copy>(value: T) -> impl Parser<I, T, Infallible> {
     move |i| Ok((i, value))
 }
 
@@ -62,7 +68,7 @@ where
 
 /// A parser that may or may not parse additional data, based on a read
 /// [boolean flag](boolean).
-pub fn maybe<I, T, E, P>(mut parser: P) -> impl Parser<I, Option<T>, E>
+pub fn maybe<I, T, E, P>(mut parser: P) -> impl FnMut(I) -> IResult<I, Option<T>, E>
 where
     I: Slice<RangeFrom<usize>> + InputIter<Item = u8> + InputLength + Clone,
     P: Parser<I, T, E>,
@@ -77,18 +83,7 @@ where
     }
 }
 
-pub fn angle<I, E>(i: I) -> IResult<I, Angle, E>
-where
-    I: Slice<RangeFrom<usize>> + InputIter<Item = u8> + InputLength,
-    E: ParseError<I>
-{
-    map(
-        be_u8,
-        Angle
-    )(i)
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default, Nom)]
 pub struct Angle(pub u8);
 
 trait Angular {
@@ -140,7 +135,7 @@ angular_impl!(
 //region Byte slice-specific operations
 
 /// A parser that reads a variable-length byte slice.
-/// 
+///
 /// Length is read as a [variable-length integer](varint) prefixed before the
 /// actual data.
 pub fn var_bytes(i: &[u8]) -> IResult<&[u8], &[u8]> {
@@ -149,7 +144,7 @@ pub fn var_bytes(i: &[u8]) -> IResult<&[u8], &[u8]> {
 
 /// Returns a parser that reads a variable-length UTF-8 string with a maximum
 /// length of 32767 bytes.
-/// 
+///
 /// Length is read as a [variable-length integer](varint) prefixed before the
 /// actual data.
 ///
@@ -160,13 +155,13 @@ pub fn var_str(i: &[u8]) -> IResult<&[u8], &str> {
     var_str_with_max_length(32767u32)(i)
 }
 
-/// Returns a parser that reads a variable-length UTF-8 string with a maximum 
+/// Returns a parser that reads a variable-length UTF-8 string with a maximum
 /// length in bytes.
 ///
-/// Length is read as a [variable-length integer](varint) prefixed before the 
+/// Length is read as a [variable-length integer](varint) prefixed before the
 /// actual data.
-/// 
-/// The parser will read at most (*size of length field* + `max_length`) bytes 
+///
+/// The parser will read at most (*size of length field* + `max_length`) bytes
 /// of data.
 pub fn var_str_with_max_length<V>(max_length: V) -> impl Fn(&[u8]) -> IResult<&[u8], &str>
 where
@@ -201,7 +196,7 @@ mod tests {
     fn test_read_var_str() {
         fn test(input: &[u8], expected: &str) {
             let (input, actual) = var_str(input).unwrap();
-            assert_eq!(input, &[]);
+            assert!(input.is_empty());
             assert_eq!(actual, expected);
         }
         test(b"\x00", "");

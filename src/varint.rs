@@ -1,18 +1,18 @@
 //! Utilities for reading [Minecraft's variable-length integers](https://wiki.vg/Protocol#VarInt_and_VarLong).
-//! 
+//!
 //! Minecraft's network protocol uses a variation of
 //! [ProtoBuf's `VarInt`s](`https://developers.google.com/protocol-buffers/docs/encoding#varints`),
 //! to encode integers space-efficiently, and there's a [*ton*](https://docs.rs/integer-encoding)
 //! [of](https://docs.rs/varint) [crates](https://docs.rs/mc-varint) that do this.
-//! 
+//!
 //! The problem is... those are all ill-suited for my purposes.
 //! What I would like, is a [generic trait](VarInt) that can be implemented on
 //! *any* multi-byte integer, a [generic algorithm](varint) to read those `VarInt`s
 //! from a byte stream that also works in synergy with [`nom`](https://docs.rs/nom).
-//! 
+//!
 //! And I think I've made just that. Enjoy.
-
-use std::ops::{BitOr, Shl};
+use eyre::eyre;
+use std::ops::{BitAnd, BitOr, Shl, ShrAssign};
 
 use nom::{
     bytes::streaming::take_while_m_n,
@@ -24,14 +24,21 @@ use nom::{
 
 /// A trait offering all the necessary information [`varint`] needs to deserialize
 /// the implementor successfully as a variable-length integer.
-/// 
+///
 /// Implemented on all integer types except for [`u8`], [`i8`], [`usize`] and
 /// [`isize`] by default.
 
 // who needs `num-traits` when you can have `num-traits` at home
 // `num-traits` at home:
 pub trait VarInt:
-    BitOr<Output = Self> + Shl<Output = Self> + PartialEq + Copy + From<u8> + Sized
+    BitAnd<Output = Self>
+    + BitOr<Output = Self>
+    + Shl<Output = Self>
+    + ShrAssign
+    + PartialEq
+    + Copy
+    + From<u8>
+    + Sized
 {
     /// The maximum number of bytes a variable-length integer of this type can occupy.
     const MAX_SIZE: usize;
@@ -39,10 +46,15 @@ pub trait VarInt:
     const ZERO: Self;
     /// The amount the integer must shift left or right for each byte. Currently
     /// seven (7) for all types.
-    /// 
+    ///
     /// Alternatively, think of this as how many significant bits (i.e. bits not
     /// used as markers) each byte encodes.
     const SHIFT_CONSTANT: Self;
+    /// The bitmask used to determine if the varint is done writing.
+    /// Equals to `!0x7f` for all integers by default.
+    const END_MASK: Self;
+
+    fn bottom_u8(self) -> u8;
 }
 
 pub fn varint<V: VarInt>(i: &[u8]) -> IResult<&[u8], V> {
@@ -61,6 +73,25 @@ pub fn varint<V: VarInt>(i: &[u8]) -> IResult<&[u8], V> {
             })
         },
     )(i)
+}
+
+pub fn serialize_and_append<V: VarInt>(mut v: V, buf: &mut Vec<u8>) -> eyre::Result<()> {
+    for _ in 0..V::MAX_SIZE {
+        if v & V::END_MASK == V::ZERO {
+            buf.push(v.bottom_u8());
+            return Ok(());
+        }
+        buf.push(v.bottom_u8() | 0x80);
+        v >>= V::SHIFT_CONSTANT;
+    }
+    Err(eyre!("overflow when converting varint to bytes"))
+}
+
+#[inline]
+pub fn serialize_to_bytes<V: VarInt>(v: V) -> eyre::Result<Vec<u8>> {
+    let mut buf = vec![];
+    serialize_and_append(v, &mut buf)?;
+    Ok(buf)
 }
 
 #[cfg(test)]
@@ -113,7 +144,7 @@ mod tests {
     fn verify<V: VarInt + std::fmt::Debug>(expected: V, data: &[u8]) {
         let (rest, actual): (&[u8], V) = super::varint(data).finish().unwrap();
         assert_eq!(expected, actual);
-        assert_eq!(rest, &[]);
+        assert!(rest.is_empty());
     }
 }
 
@@ -124,6 +155,11 @@ macro_rules! varint_impl {
                 const MAX_SIZE: usize = $max;
                 const ZERO: Self = 0;
                 const SHIFT_CONSTANT: Self = 7;
+                const END_MASK: Self = !0x7f;
+
+                fn bottom_u8(self) -> u8 {
+                    (self & 0xff) as u8
+                }
             }
         )+
     };

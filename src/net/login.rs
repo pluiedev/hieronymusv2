@@ -1,62 +1,62 @@
-use nom::{combinator::map, sequence::tuple, IResult};
+use nom::IResult;
+use nom_derive::Nom;
+use tracing::instrument;
 
 use crate::{
     match_id_and_forward,
     nom::{maybe, var_bytes, var_str_with_max_length},
 };
 
-use super::{Connection, PacketHandler};
+use super::{BoxedPacket, Connection, Packet};
+use async_trait::async_trait;
 
-pub fn read_packet<'data>(
-    conn: &mut Connection,
-) -> impl FnMut(&'data [u8]) -> IResult<&'data [u8], ()> + '_ {
+pub fn read_packet<'data>(input: &'data [u8]) -> IResult<&'data [u8], BoxedPacket<'data>> {
     match_id_and_forward! {
-        0 => map(var_str_with_max_length(16u32), |username| conn.handle(LoginStart { username })),
-        1 => map(
-            tuple((var_bytes, var_bytes)),
-            |(shared_secret, verify_token)| conn.handle(EncryptionResponse {
-                shared_secret,
-                verify_token
-            })
-        ),
-        2 => map(
-            tuple((
-                varint,
-                maybe(var_bytes),
-            )),
-            |(message_id, data)| conn.handle(LoginPluginResponse {
-                message_id,
-                data
-            })
-        )
+        input;
+        0 => LoginStart,
+        1 => EncryptionResponse,
+        2 => LoginPluginResponse
     }
 }
 
+#[derive(Debug, Nom)]
 struct LoginStart<'a> {
+    #[nom(Parse = "var_str_with_max_length(16u32)")]
     username: &'a str,
 }
-impl PacketHandler<LoginStart<'_>> for Connection {
-    fn handle(&mut self, packet: LoginStart<'_>) {
+#[async_trait]
+impl Packet for LoginStart<'_> {
+    #[instrument(skip(conn))]
+    async fn handle(&self, conn: &mut Connection) -> eyre::Result<()> {
         todo!()
     }
 }
 
+#[derive(Debug, Nom)]
 struct EncryptionResponse<'a> {
+    #[nom(Parse = "var_bytes")]
     shared_secret: &'a [u8],
+    #[nom(Parse = "var_bytes")]
     verify_token: &'a [u8],
 }
-impl PacketHandler<EncryptionResponse<'_>> for Connection {
-    fn handle(&mut self, packet: EncryptionResponse<'_>) {
+#[async_trait]
+impl Packet for EncryptionResponse<'_> {
+    #[instrument(skip(conn))]
+    async fn handle(&self, conn: &mut Connection) -> eyre::Result<()> {
         todo!()
     }
 }
 
+#[derive(Debug, Nom)]
 struct LoginPluginResponse<'a> {
     message_id: u32,
+    #[nom(Parse = "maybe(var_bytes)")]
     data: Option<&'a [u8]>,
 }
-impl PacketHandler<LoginPluginResponse<'_>> for Connection {
-    fn handle(&mut self, packet: LoginPluginResponse<'_>) {
+#[async_trait]
+impl Packet for LoginPluginResponse<'_> {
+    #[instrument(skip(conn))]
+    async fn handle(&self, conn: &mut Connection) -> eyre::Result<()> {
         todo!()
     }
 }
