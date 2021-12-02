@@ -183,7 +183,7 @@ impl RequestBuilder {
 
     #[instrument(skip_all)]
     pub async fn send(&self, conn: &mut Connection) -> eyre::Result<()> {
-        let mut header = varint::serialize_to_bytes(self.data.len() as u32);
+        let header = varint::serialize_to_bytes(self.data.len() as u32);
         trace!(?header);
         conn.socket.write(&header).await?;
 

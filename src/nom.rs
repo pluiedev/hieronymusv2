@@ -1,6 +1,6 @@
 //! `nom` utilities.
 
-use std::{convert::Infallible, ops::RangeFrom};
+use std::ops::RangeFrom;
 
 use nom::{
     combinator::{map, map_opt, map_res},
@@ -39,18 +39,6 @@ macro_rules! match_id_and_forward {
 
 //region Generalized idioms
 
-/// A parser that consumes no data and only returns [`()`](unit).
-#[inline]
-pub fn nop<I>(i: I) -> IResult<I, ()> {
-    constant(()).parse(i).map_err(|_| panic!("not possible"))
-}
-
-/// A parser that consumes no data and only returns the constant supplied.
-#[inline]
-pub fn constant<I, T: Copy>(value: T) -> impl Parser<I, T, Infallible> {
-    move |i| Ok((i, value))
-}
-
 /// A parser that tries to parse a [`bool`] value from a read [`u8`].
 ///
 /// Zero (0) maps to `false`, one (1) maps to `true`, and any other value
@@ -86,23 +74,23 @@ where
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default, Nom)]
 pub struct Angle(pub u8);
 
-trait Angular {
+pub trait Angular {
     fn from_angle_degrees(angle: Angle) -> Self;
     fn from_angle_radians(angle: Angle) -> Self;
     fn into_angle_degrees_rounded(self) -> Angle;
     fn into_angle_radians_rounded(self) -> Angle;
 }
 impl Angle {
-    fn from_degrees_rounded<F: Angular>(f: F) -> Self {
+    pub fn from_degrees_rounded<F: Angular>(f: F) -> Self {
         F::into_angle_degrees_rounded(f)
     }
-    fn from_radians_rounded<F: Angular>(f: F) -> Self {
+    pub fn from_radians_rounded<F: Angular>(f: F) -> Self {
         F::into_angle_radians_rounded(f)
     }
-    fn to_degrees<F: Angular>(self) -> F {
+    pub fn to_degrees<F: Angular>(self) -> F {
         F::from_angle_degrees(self)
     }
-    fn to_radians<F: Angular>(self) -> F {
+    pub fn to_radians<F: Angular>(self) -> F {
         F::from_angle_radians(self)
     }
 }
