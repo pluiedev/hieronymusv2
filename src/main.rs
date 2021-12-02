@@ -23,12 +23,12 @@ async fn main() -> eyre::Result<()> {
     info!("hieronymus v2");
 
     let (tx, rx) = mpsc::channel(100);
-    let mut server = Server::new(rx, 69);
+    let server = Server::new(rx, 69);
     let hook = ServerHook(tx);
 
     spawn(listener_thread("127.0.0.1:25565", hook));
 
-    server.event_loop().await;
+    server.event_loop().await?;
 
     Ok(())
 }
@@ -38,10 +38,10 @@ fn setup() -> eyre::Result<()> {
         .with_env_filter(EnvFilter::from_default_env())
         .finish()
         .with(ErrorLayer::default());
+
     tracing::subscriber::set_global_default(subscriber)?;
 
     color_eyre::install()?;
-
     Ok(())
 }
 

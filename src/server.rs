@@ -1,5 +1,7 @@
+use eyre::eyre;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
+use tracing::{trace, instrument};
 pub struct Server {
     rx: mpsc::Receiver<ServerEvent>,
     version: Version,
@@ -18,7 +20,8 @@ impl Server {
         }
     }
 
-    pub async fn event_loop(&mut self) {
+    #[instrument(skip(self))]
+    pub async fn event_loop(mut self) -> eyre::Result<()> {
         loop {
             while let Some(ServerEvent(req)) = self.rx.recv().await {
                 match req {
@@ -34,8 +37,10 @@ impl Server {
                                 "sample": self.players.players.iter().take(5).collect::<Vec<_>>()
                             }
                         });
-                        let json = serde_json::to_string(&json).unwrap();
-                        tx.send(json).unwrap()
+                        trace!(?json);
+                        let json = serde_json::to_string(&json)?;
+                        trace!(?json);
+                        tx.send(json).map_err(|_| eyre!("failed to send status data"))?;
                     }
                 }
             }

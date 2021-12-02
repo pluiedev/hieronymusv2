@@ -11,10 +11,7 @@
 //! from a byte stream that also works in synergy with [`nom`](https://docs.rs/nom).
 //!
 //! And I think I've made just that. Enjoy.
-use std::{
-    fmt::Debug,
-    ops::{BitAnd, BitOr, Shl, ShrAssign},
-};
+use std::fmt::Debug;
 
 use nom::{
     bytes::streaming::take_while_m_n,
@@ -23,6 +20,7 @@ use nom::{
     sequence::pair,
     IResult,
 };
+use num_traits::PrimInt;
 
 /// A trait offering all the necessary information [`varint`] needs to deserialize
 /// the implementor successfully as a variable-length integer.
@@ -32,17 +30,7 @@ use nom::{
 
 // who needs `num-traits` when you can have `num-traits` at home
 // `num-traits` at home:
-pub trait VarInt:
-    BitAnd<Output = Self>
-    + BitOr<Output = Self>
-    + Shl<Output = Self>
-    + ShrAssign
-    + PartialEq
-    + Copy
-    + From<u8>
-    + Sized
-    + Debug
-{
+pub trait VarInt: PrimInt + From<u8> + Debug {
     /// The maximum number of bytes a variable-length integer of this type can occupy.
     const MAX_SIZE: usize;
     /// The zero (0) value of this type.
@@ -52,15 +40,18 @@ pub trait VarInt:
     ///
     /// Alternatively, think of this as how many significant bits (i.e. bits not
     /// used as markers) each byte encodes.
-    const SHIFT_CONSTANT: Self;
+    const SHIFT_CONSTANT: usize;
     /// The bitmask used to determine if the varint is done writing.
     /// Equals to `!0x7f` for all integers by default.
     const END_MASK: Self;
 
-    fn bottom_u8(self) -> u8;
+    /// Returns the least significant byte of the integer.
+    /// Used for serialization.
+    fn least_significant_byte(self) -> u8;
 }
 
-pub fn varint<V: VarInt>(i: &[u8]) -> IResult<&[u8], V> {
+/// A parser that reads a [variable-length integer](crate::varint) from a byte slice.
+pub fn varint<V: VarInt>(input: &[u8]) -> IResult<&[u8], V> {
     // thanks Nemo157#0157 on Discord for optimizing this to this level.
     // you're a true nom wizard.
     map(
@@ -72,24 +63,37 @@ pub fn varint<V: VarInt>(i: &[u8]) -> IResult<&[u8], V> {
         )),
         |bytes: &[u8]| {
             bytes.iter().rev().fold(V::ZERO, |acc, &b| {
-                acc << V::SHIFT_CONSTANT | V::from(b & 0x7f)
+                acc << V::SHIFT_CONSTANT | From::from(b & 0x7f)
             })
         },
-    )(i)
+    )(input)
 }
 
+/// Appends a serialized [variable-length integer](crate::varint) to an existing [`Vec`]. 
+///
+/// Use [`serialize_to_bytes`] if you don't have an existing [`Vec`] to use.
 pub fn serialize_and_append<V: VarInt>(mut v: V, buf: &mut Vec<u8>) {
     for _ in 0..V::MAX_SIZE {
         if v & V::END_MASK == V::ZERO {
-            buf.push(v.bottom_u8());
+            buf.push(v.least_significant_byte());
             return;
         }
-        buf.push(v.bottom_u8() | 0x80);
-        v >>= V::SHIFT_CONSTANT;
+        buf.push(v.least_significant_byte() | 0x80);
+        v = v >> V::SHIFT_CONSTANT;
     }
     panic!("overflow when converting varint to bytes");
 }
 
+/// Serializes a [variable-length integer](crate::varint) into bytes.
+/// 
+/// Use [`serialize_and_append`] if you already have a [`Vec`] to use.
+/// 
+/// This is equivalent to:
+/// ```
+/// let mut buf = vec![];
+/// serialize_and_append(v, &mut buf);
+/// buf
+/// ```
 #[inline]
 pub fn serialize_to_bytes<V: VarInt>(v: V) -> Vec<u8> {
     let mut buf = vec![];
@@ -157,10 +161,10 @@ macro_rules! varint_impl {
             impl VarInt for $ty {
                 const MAX_SIZE: usize = $max;
                 const ZERO: Self = 0;
-                const SHIFT_CONSTANT: Self = 7;
+                const SHIFT_CONSTANT: usize = 7;
                 const END_MASK: Self = !0x7f;
 
-                fn bottom_u8(self) -> u8 {
+                fn least_significant_byte(self) -> u8 {
                     (self & 0xff) as u8
                 }
             }
