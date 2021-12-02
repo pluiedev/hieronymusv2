@@ -11,9 +11,9 @@ use tracing_subscriber::{prelude::*, EnvFilter};
 use crate::net::Connection;
 
 pub mod net;
-pub mod nom;
 pub mod server;
 pub mod varint;
+mod nom;
 
 #[tokio::main]
 #[instrument]

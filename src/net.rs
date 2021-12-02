@@ -4,10 +4,16 @@ mod status;
 
 use eyre::bail;
 use nom::{multi::length_data, IResult};
-use tokio::{io::AsyncReadExt, net::TcpStream};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+};
 use tracing::{debug, instrument, trace, warn};
 
-use crate::{server::ServerHook, varint::varint};
+use crate::{
+    server::ServerHook,
+    varint::{self, varint, VarInt},
+};
 use async_trait::async_trait;
 
 #[async_trait]
@@ -91,4 +97,98 @@ pub enum ConnectionState {
     Status,
     Login,
     Play,
+}
+
+#[derive(Debug)]
+pub struct RequestBuilder {
+    data: Vec<u8>,
+}
+
+impl RequestBuilder {
+    pub fn new(packet_id: u32) -> Self {
+        Self {
+            data: varint::serialize_to_bytes(packet_id as u32),
+        }
+    }
+
+    #[instrument]
+    pub fn u8<'builder>(&'builder mut self, v: u8) -> &'builder mut Self {
+        trace!(?v);
+        self.raw_blob(v.to_be_bytes())
+    }
+    #[instrument]
+    pub fn u16<'builder>(&'builder mut self, v: u16) -> &'builder mut Self {
+        trace!(?v);
+        self.raw_blob(v.to_be_bytes())
+    }
+    #[instrument]
+    pub fn u32<'builder>(&'builder mut self, v: u32) -> &'builder mut Self {
+        trace!(?v);
+        self.raw_blob(v.to_be_bytes())
+    }
+    #[instrument]
+    pub fn u64<'builder>(&'builder mut self, v: u64) -> &'builder mut Self {
+        trace!(?v);
+        self.raw_blob(v.to_be_bytes())
+    }
+    #[instrument]
+    pub fn u128<'builder>(&'builder mut self, v: u128) -> &'builder mut Self {
+        trace!(?v);
+        self.raw_blob(v.to_be_bytes())
+    }
+    #[instrument]
+    pub fn i8<'builder>(&'builder mut self, v: i8) -> &'builder mut Self {
+        trace!(?v);
+        self.raw_blob(v.to_be_bytes())
+    }
+    #[instrument]
+    pub fn i16<'builder>(&'builder mut self, v: i16) -> &'builder mut Self {
+        trace!(?v);
+        self.raw_blob(v.to_be_bytes())
+    }
+    #[instrument]
+    pub fn i32<'builder>(&'builder mut self, v: i32) -> &'builder mut Self {
+        trace!(?v);
+        self.raw_blob(v.to_be_bytes())
+    }
+    #[instrument]
+    pub fn i64<'builder>(&'builder mut self, v: i64) -> &'builder mut Self {
+        trace!(?v);
+        self.raw_blob(v.to_be_bytes())
+    }
+    #[instrument]
+    pub fn i128<'builder>(&'builder mut self, v: i128) -> &'builder mut Self {
+        trace!(?v);
+        self.raw_blob(v.to_be_bytes())
+    }
+    #[instrument(skip_all)]
+    pub fn varint<'builder, V: VarInt>(&'builder mut self, v: V) -> &'builder mut Self {
+        trace!(?v);
+        varint::serialize_and_append(v, &mut self.data);
+        self
+    }
+    #[instrument(skip_all)]
+    pub fn raw_blob<'builder, B: AsRef<[u8]>>(&'builder mut self, b: B) -> &'builder mut Self {
+        let b = b.as_ref();
+        trace!(?b);
+        self.data.extend_from_slice(b);
+        self
+    }
+    #[instrument(skip_all)]
+    pub fn var_blob<'builder, B: AsRef<[u8]>>(&'builder mut self, b: B) -> &'builder mut Self {
+        let b = b.as_ref();
+        trace!(?b);
+        self.varint(b.len() as u32).raw_blob(b)
+    }
+
+    #[instrument(skip_all)]
+    pub async fn send(&self, conn: &mut Connection) -> eyre::Result<()> {
+        let mut header = varint::serialize_to_bytes(self.data.len() as u32);
+        trace!(?header);
+        conn.socket.write(&header).await?;
+
+        trace!(?self.data);
+        conn.socket.write(&self.data).await?;
+        Ok(())
+    }
 }

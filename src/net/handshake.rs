@@ -19,7 +19,7 @@ pub fn read_packet<'data>(input: &'data [u8]) -> IResult<&'data [u8], BoxedPacke
 }
 
 #[derive(Debug, Nom)]
-pub struct Handshake<'a> {
+struct Handshake<'a> {
     #[nom(Parse = "varint")]
     _protocol_version: u32,
     #[nom(Parse = "var_str")]

@@ -11,8 +11,10 @@
 //! from a byte stream that also works in synergy with [`nom`](https://docs.rs/nom).
 //!
 //! And I think I've made just that. Enjoy.
-use eyre::eyre;
-use std::ops::{BitAnd, BitOr, Shl, ShrAssign};
+use std::{
+    fmt::Debug,
+    ops::{BitAnd, BitOr, Shl, ShrAssign},
+};
 
 use nom::{
     bytes::streaming::take_while_m_n,
@@ -39,6 +41,7 @@ pub trait VarInt:
     + Copy
     + From<u8>
     + Sized
+    + Debug
 {
     /// The maximum number of bytes a variable-length integer of this type can occupy.
     const MAX_SIZE: usize;
@@ -75,23 +78,23 @@ pub fn varint<V: VarInt>(i: &[u8]) -> IResult<&[u8], V> {
     )(i)
 }
 
-pub fn serialize_and_append<V: VarInt>(mut v: V, buf: &mut Vec<u8>) -> eyre::Result<()> {
+pub fn serialize_and_append<V: VarInt>(mut v: V, buf: &mut Vec<u8>) {
     for _ in 0..V::MAX_SIZE {
         if v & V::END_MASK == V::ZERO {
             buf.push(v.bottom_u8());
-            return Ok(());
+            return;
         }
         buf.push(v.bottom_u8() | 0x80);
         v >>= V::SHIFT_CONSTANT;
     }
-    Err(eyre!("overflow when converting varint to bytes"))
+    panic!("overflow when converting varint to bytes");
 }
 
 #[inline]
-pub fn serialize_to_bytes<V: VarInt>(v: V) -> eyre::Result<Vec<u8>> {
+pub fn serialize_to_bytes<V: VarInt>(v: V) -> Vec<u8> {
     let mut buf = vec![];
-    serialize_and_append(v, &mut buf)?;
-    Ok(buf)
+    serialize_and_append(v, &mut buf);
+    buf
 }
 
 #[cfg(test)]
