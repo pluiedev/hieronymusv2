@@ -31,7 +31,7 @@ async fn main() -> eyre::Result<()> {
 
     let keys = Keys::new()?;
     let config = Arc::new(Config {
-        is_online: false,
+        is_online: true,
         max_players: 69,
     });
     let server = Server::new(rx, config.clone());

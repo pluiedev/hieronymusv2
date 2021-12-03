@@ -8,24 +8,28 @@ edition = "2021"
 [dependencies]
 aes = "0.7.5"
 async-trait = "0.1.51"
-block-modes = "0.8.1"
+cfb8 = "0.7.1"
+cipher = { version = "0.3.0", features = ["std"] }
 color-eyre = "0.5.11"
 eyre = "0.6.5"
+hex = "0.4.3"
 nom = "7.1.0"
 nom-derive = "0.10.0"
 num-traits = "0.2.14"
 parking_lot = "0.11.2"
 rand = "0.8.4"
+reqwest = { version = "0.11.7", features = ["json"] }
 rsa = "0.5.0"
 rsa-der = "0.3.0"
 serde = { version = "1.0.130", features = ["derive"] }
 serde_json = "1.0.72"
+sha1 = "0.6.0"
 thiserror = "1.0.30"
 tokio = { version = "1.14.0", features = ["net", "macros", "rt", "sync", "rt-multi-thread", "io-util"] }
 tracing = "0.1.29"
 tracing-error = "0.2.0"
 tracing-futures = "0.2.5"
 tracing-subscriber = { version = "0.3.3", features = ["env-filter"] }
-uuid = { version = "0.8.2", features = ["v4"] }
+uuid = { version = "0.8.2", features = ["v4", "serde"] }
 
 [features]

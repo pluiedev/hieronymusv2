@@ -1,4 +1,4 @@
-//! `nom` utilities.
+//! [`nom`] utilities.
 
 use std::ops::RangeFrom;
 

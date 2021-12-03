@@ -4,8 +4,8 @@ mod status;
 
 use std::sync::Arc;
 
-use aes::Aes128;
-use block_modes::{block_padding::NoPadding, BlockMode, Cfb8};
+use aes::{Aes128, cipher::AsyncStreamCipher};
+use cfb8::Cfb8;
 use eyre::bail;
 use nom::{multi::length_data, HexDisplay, IResult};
 use tokio::{
@@ -28,7 +28,7 @@ pub trait Packet: std::fmt::Debug {
 }
 
 type BoxedPacket<'a> = Box<dyn Packet + Send + Sync + 'a>;
-type AesCipher = Cfb8<Aes128, NoPadding>;
+type AesCipher = Cfb8<Aes128>;
 pub struct Connection {
     socket: TcpStream,
     server: ServerHook,
@@ -85,7 +85,7 @@ impl Connection {
         }
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip_all)]
     pub async fn read_packet<'data>(&mut self, mut input: &'data [u8]) -> IResult<&'data [u8], ()> {
         loop {
             trace!(?input);
@@ -214,22 +214,16 @@ impl RequestBuilder {
     #[instrument(skip_all)]
     pub async fn send(&mut self, conn: &mut Connection) -> eyre::Result<()> {
         let mut header = varint::serialize_to_bytes(self.data.len() as u32);
+        let data = &mut self.data;
         trace!(?header);
-        trace!("\n{}", self.data.to_hex(16));
+        trace!("\n{}", data.to_hex(16));
 
-        if let Some(cipher) = &conn.cipher {
-            // we don't have any padding
-            // FIXME(leocth): what the heck? why does this take ownership?
-            conn.socket
-                .write(cipher.clone().encrypt(&mut header, 0)?)
-                .await?;
-            conn.socket
-                .write(cipher.clone().encrypt(&mut self.data, 0)?)
-                .await?;
-        } else {
-            conn.socket.write(&header).await?;
-            conn.socket.write(&self.data).await?;
+        if let Some(cipher) = &mut conn.cipher {
+            cipher.encrypt(&mut header);
+            cipher.encrypt(data);
         }
+        conn.socket.write(&header).await?;
+        conn.socket.write(data).await?;
         Ok(())
     }
 }
