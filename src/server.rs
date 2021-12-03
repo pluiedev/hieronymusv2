@@ -3,7 +3,8 @@ use std::sync::Arc;
 use eyre::eyre;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
-use tracing::{instrument, trace};
+use tracing::{instrument, trace, debug};
+use uuid::Uuid;
 
 use crate::config::Config;
 pub struct Server {
@@ -40,11 +41,14 @@ impl Server {
                                 "sample": self.players.iter().take(5).collect::<Vec<_>>()
                             }
                         });
-                        trace!(?json);
                         let json = serde_json::to_string(&json)?;
                         trace!(?json);
                         tx.send(json)
                             .map_err(|_| eyre!("failed to send status data"))?;
+                    },
+                    Inner::JoinGame(player) => {
+                        debug!(?player, "Player joined");
+                        self.players.push(player);
                     }
                 }
             }
@@ -82,8 +86,8 @@ impl Ord for Version {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Player {
-    username: String,
-    uuid: String, //Uuid,
+    pub username: String,
+    pub uuid: Uuid,
 }
 
 #[derive(Clone)]
@@ -97,6 +101,12 @@ impl ServerHook {
             .await?;
         Ok(rx.await?)
     }
+    pub async fn join_game(&self, player: Player) -> eyre::Result<()> {
+        self.0
+            .send(ServerEvent(Inner::JoinGame(player)))
+            .await?;
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -104,4 +114,5 @@ pub struct ServerEvent(Inner);
 #[derive(Debug)]
 enum Inner {
     GetServerStatus { tx: oneshot::Sender<String> },
+    JoinGame(Player),
 }

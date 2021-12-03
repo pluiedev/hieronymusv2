@@ -12,6 +12,7 @@ use crate::{
     match_id_and_forward,
     net::AesCipher,
     nom::{maybe, var_bytes, var_str_with_max_length},
+    server::Player,
 };
 
 use super::{BoxedPacket, Connection, ConnectionState, Packet, RequestBuilder};
@@ -113,17 +114,23 @@ impl Packet for EncryptionResponse<'_> {
         trace!(?url);
         let auth_response: AuthResponse = reqwest::get(url).await?.json().await?;
         trace!(?auth_response);
-
         debug!("Login successful: transitioning into Play state");
 
         conn.state = ConnectionState::Play;
         conn.cipher = Some(AesCipher::new_from_slices(&shared_secret, &shared_secret)?);
 
+        let player = Player {
+            username: auth_response.name,
+            uuid: auth_response.id,
+        };
+        // Login success
         RequestBuilder::new(2)
-            .u128(auth_response.id.as_u128())
-            .var_blob(&auth_response.name)
+            .u128(player.uuid.as_u128())
+            .var_blob(&player.username)
             .send(conn)
             .await?;
+
+        conn.server.join_game(player).await?;
 
         // prematurely kick
         conn.kick(
