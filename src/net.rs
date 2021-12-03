@@ -4,7 +4,7 @@ mod status;
 
 use std::sync::Arc;
 
-use aes::{Aes128, cipher::AsyncStreamCipher};
+use aes::{cipher::AsyncStreamCipher, Aes128};
 use cfb8::Cfb8;
 use eyre::bail;
 use nom::{multi::length_data, HexDisplay, IResult};

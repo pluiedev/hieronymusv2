@@ -19,7 +19,7 @@ use async_trait::async_trait;
 
 const SERVER_ID: &[u8] = b"hiero|rejectnormalcy";
 
-pub fn read_packet<'data>(input: &'data [u8]) -> IResult<&'data [u8], BoxedPacket<'data>> {
+pub fn read_packet(input: &[u8]) -> IResult<&[u8], BoxedPacket<'_>> {
     match_id_and_forward! {
         input;
         0 => LoginStart,
@@ -115,6 +115,7 @@ impl Packet for EncryptionResponse<'_> {
         trace!(?auth_response);
 
         debug!("Login successful: transitioning into Play state");
+
         conn.state = ConnectionState::Play;
         conn.cipher = Some(AesCipher::new_from_slices(&shared_secret, &shared_secret)?);
 
@@ -162,10 +163,10 @@ fn minecraft_style_crappy_hash(input: &[u8]) -> String {
         // yes, I know this is cursed.
         // Minecraft is cursed, and we are cursed.
         for i in input.iter_mut().rev() {
-            *i = !*i & 0xff;
+            *i = !*i;
             if carry {
                 carry = *i == 0xff;
-                *i = *i + 1;
+                *i += 1;
             }
         }
 

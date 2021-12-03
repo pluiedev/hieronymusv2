@@ -11,7 +11,7 @@ use crate::{
 
 use super::{BoxedPacket, Connection, ConnectionState, Packet};
 
-pub fn read_packet<'data>(input: &'data [u8]) -> IResult<&'data [u8], BoxedPacket<'data>> {
+pub fn read_packet(input: &[u8]) -> IResult<&[u8], BoxedPacket<'_>> {
     match_id_and_forward! {
         input;
         0 => Handshake

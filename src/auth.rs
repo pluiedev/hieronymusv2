@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use rand::rngs::OsRng;
-use rsa::{RsaPrivateKey, PublicKeyParts};
+use rsa::{PublicKeyParts, RsaPrivateKey};
 
 #[derive(Clone)]
 pub struct Keys {

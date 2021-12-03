@@ -69,7 +69,7 @@ pub fn varint<V: VarInt>(input: &[u8]) -> IResult<&[u8], V> {
     )(input)
 }
 
-/// Appends a serialized [variable-length integer](crate::varint) to an existing [`Vec`]. 
+/// Appends a serialized [variable-length integer](crate::varint) to an existing [`Vec`].
 ///
 /// Use [`serialize_to_bytes`] if you don't have an existing [`Vec`] to use.
 pub fn serialize_and_append<V: VarInt>(mut v: V, buf: &mut Vec<u8>) {
@@ -85,9 +85,9 @@ pub fn serialize_and_append<V: VarInt>(mut v: V, buf: &mut Vec<u8>) {
 }
 
 /// Serializes a [variable-length integer](crate::varint) into bytes.
-/// 
+///
 /// Use [`serialize_and_append`] if you already have a [`Vec`] to use.
-/// 
+///
 /// This is equivalent to:
 /// ```
 /// let mut buf = vec![];

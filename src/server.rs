@@ -80,7 +80,6 @@ impl Ord for Version {
     }
 }
 
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Player {
     username: String,

@@ -7,7 +7,7 @@ use crate::match_id_and_forward;
 use super::{BoxedPacket, Connection, Packet, RequestBuilder};
 use async_trait::async_trait;
 
-pub fn read_packet<'data>(input: &'data [u8]) -> IResult<&'data [u8], BoxedPacket<'data>> {
+pub fn read_packet(input: &[u8]) -> IResult<&[u8], BoxedPacket<'_>> {
     match_id_and_forward! {
         input;
         0 => Status,
@@ -24,10 +24,7 @@ impl Packet for Status {
         let status = conn.server.get_server_status().await?;
         trace!(?status);
 
-        RequestBuilder::new(0)
-            .var_blob(&status)
-            .send(conn)
-            .await?;
+        RequestBuilder::new(0).var_blob(&status).send(conn).await?;
         Ok(())
     }
 }
@@ -38,10 +35,7 @@ struct Ping(u64);
 impl Packet for Ping {
     #[instrument(skip(conn))]
     async fn handle(&self, conn: &mut Connection) -> eyre::Result<()> {
-        RequestBuilder::new(1)
-            .u64(self.0)
-            .send(conn)
-            .await?;
+        RequestBuilder::new(1).u64(self.0).send(conn).await?;
 
         Ok(())
     }
