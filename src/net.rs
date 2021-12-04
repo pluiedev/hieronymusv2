@@ -1,5 +1,6 @@
 mod handshake;
 mod login;
+mod play;
 mod status;
 
 use std::sync::Arc;
@@ -12,7 +13,8 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
 };
-use tracing::{debug, info, instrument, trace, warn};
+use tracing::{debug, instrument, trace, warn};
+use uuid::Uuid;
 
 use crate::{
     auth::{AuthSession, Keys},
@@ -65,7 +67,7 @@ impl Connection {
         loop {
             let read = self.socket.read(&mut buf).await?;
             if read == 0 {
-                info!("Connection reset");
+                debug!("Connection reset");
                 return Ok(());
             }
 
@@ -73,7 +75,6 @@ impl Connection {
             match self.read_packet(&buf[..read]).await {
                 Ok(_) => {}
                 Err(Err::Error(e) | Err::Failure(e)) => {
-                    debug!("TODO");
                     bail!("Parsing error: {:?}", e);
                 }
                 Err(Err::Incomplete(n)) => {
@@ -112,8 +113,13 @@ impl Connection {
     }
 
     pub async fn kick(&mut self, reason: &str) -> eyre::Result<()> {
-        RequestBuilder::new(0x1a)
-            .var_blob(reason)
+        let packet_id = match self.state {
+            ConnectionState::Login => 0x00,
+            ConnectionState::Play => 0x1a,
+            _ => bail!("kick packets cannot be issued in state {:?}", self.state),
+        };
+        ResponseBuilder::new(packet_id)
+            .var_data(reason)
             .send(self)
             .await?;
 
@@ -130,66 +136,28 @@ pub enum ConnectionState {
 }
 
 #[derive(Debug)]
-pub struct RequestBuilder {
+pub struct ResponseBuilder {
     data: Vec<u8>,
 }
 
-impl RequestBuilder {
+impl ResponseBuilder {
     pub fn new(packet_id: u32) -> Self {
         Self {
             data: varint::serialize_to_bytes(packet_id as u32),
         }
     }
-
-    #[instrument]
-    pub fn u8<'builder>(&'builder mut self, v: u8) -> &'builder mut Self {
-        trace!(?v);
-        self.raw_blob(v.to_be_bytes())
+    #[instrument(skip_all)]
+    pub fn add<'builder, T: IntoResponseField>(&'builder mut self, t: &T) -> &'builder mut Self {
+        t.into_request_field(self);
+        self
     }
-    #[instrument]
-    pub fn u16<'builder>(&'builder mut self, v: u16) -> &'builder mut Self {
-        trace!(?v);
-        self.raw_blob(v.to_be_bytes())
-    }
-    #[instrument]
-    pub fn u32<'builder>(&'builder mut self, v: u32) -> &'builder mut Self {
-        trace!(?v);
-        self.raw_blob(v.to_be_bytes())
-    }
-    #[instrument]
-    pub fn u64<'builder>(&'builder mut self, v: u64) -> &'builder mut Self {
-        trace!(?v);
-        self.raw_blob(v.to_be_bytes())
-    }
-    #[instrument]
-    pub fn u128<'builder>(&'builder mut self, v: u128) -> &'builder mut Self {
-        trace!(?v);
-        self.raw_blob(v.to_be_bytes())
-    }
-    #[instrument]
-    pub fn i8<'builder>(&'builder mut self, v: i8) -> &'builder mut Self {
-        trace!(?v);
-        self.raw_blob(v.to_be_bytes())
-    }
-    #[instrument]
-    pub fn i16<'builder>(&'builder mut self, v: i16) -> &'builder mut Self {
-        trace!(?v);
-        self.raw_blob(v.to_be_bytes())
-    }
-    #[instrument]
-    pub fn i32<'builder>(&'builder mut self, v: i32) -> &'builder mut Self {
-        trace!(?v);
-        self.raw_blob(v.to_be_bytes())
-    }
-    #[instrument]
-    pub fn i64<'builder>(&'builder mut self, v: i64) -> &'builder mut Self {
-        trace!(?v);
-        self.raw_blob(v.to_be_bytes())
-    }
-    #[instrument]
-    pub fn i128<'builder>(&'builder mut self, v: i128) -> &'builder mut Self {
-        trace!(?v);
-        self.raw_blob(v.to_be_bytes())
+    #[instrument(skip_all)]
+    pub fn add_many<'builder, T: IntoResponseField>(&'builder mut self, ts: &[T]) -> &'builder mut Self {
+        self.varint(ts.len() as u32);
+        for t in ts {
+            t.into_request_field(self);
+        }
+        self
     }
     #[instrument(skip_all)]
     pub fn varint<'builder, V: VarInt>(&'builder mut self, v: V) -> &'builder mut Self {
@@ -198,17 +166,17 @@ impl RequestBuilder {
         self
     }
     #[instrument(skip_all)]
-    pub fn raw_blob<'builder, B: AsRef<[u8]>>(&'builder mut self, b: B) -> &'builder mut Self {
+    pub fn raw_data<'builder, B: AsRef<[u8]>>(&'builder mut self, b: B) -> &'builder mut Self {
         let b = b.as_ref();
         trace!(?b);
         self.data.extend_from_slice(b);
         self
     }
     #[instrument(skip_all)]
-    pub fn var_blob<'builder, B: AsRef<[u8]>>(&'builder mut self, b: B) -> &'builder mut Self {
+    pub fn var_data<'builder, B: AsRef<[u8]>>(&'builder mut self, b: B) -> &'builder mut Self {
         let b = b.as_ref();
         trace!(?b);
-        self.varint(b.len() as u32).raw_blob(b)
+        self.varint(b.len() as u32).raw_data(b)
     }
 
     #[instrument(skip_all)]
@@ -227,3 +195,41 @@ impl RequestBuilder {
         Ok(())
     }
 }
+
+pub trait IntoResponseField {
+    fn into_request_field(&self, builder: &mut ResponseBuilder);
+}
+impl IntoResponseField for str {
+    fn into_request_field(&self, builder: &mut ResponseBuilder) {
+        builder.var_data(self);
+    }
+}
+impl IntoResponseField for String {
+    fn into_request_field(&self, builder: &mut ResponseBuilder) {
+        self.as_str().into_request_field(builder)
+    }
+}
+impl IntoResponseField for bool {
+    fn into_request_field(&self, builder: &mut ResponseBuilder) {
+        builder.add(if *self { &1u8 } else { &0u8 });
+    }
+}
+impl IntoResponseField for Uuid {
+    fn into_request_field(&self, builder: &mut ResponseBuilder) {
+        builder.add(&self.as_u128());
+    }
+}
+macro_rules! into_request_field_primitive_impls {
+    ($($ty:ty),+) => {
+        $(
+            impl IntoResponseField for $ty {
+                #[tracing::instrument]
+                #[inline]
+                fn into_request_field(&self, builder: &mut ResponseBuilder) {
+                    builder.raw_data(&self.to_be_bytes());
+                }
+            }
+        )+
+    };
+}
+into_request_field_primitive_impls!(u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64);

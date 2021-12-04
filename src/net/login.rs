@@ -11,11 +11,11 @@ use crate::{
     auth::AuthSession,
     match_id_and_forward,
     net::AesCipher,
-    nom::{maybe, var_bytes, var_str_with_max_length},
+    nom::{var_bytes, var_str_with_max_length},
     server::Player,
 };
 
-use super::{BoxedPacket, Connection, ConnectionState, Packet, RequestBuilder};
+use super::{BoxedPacket, Connection, ConnectionState, Packet, ResponseBuilder};
 use async_trait::async_trait;
 
 const SERVER_ID: &[u8] = b"hiero|rejectnormalcy";
@@ -24,8 +24,7 @@ pub fn read_packet(input: &[u8]) -> IResult<&[u8], BoxedPacket<'_>> {
     match_id_and_forward! {
         input;
         0 => LoginStart,
-        1 => EncryptionResponse,
-        2 => LoginPluginResponse
+        1 => EncryptionResponse
     }
 }
 
@@ -38,34 +37,26 @@ struct LoginStart<'a> {
 impl Packet for LoginStart<'_> {
     #[instrument(skip(conn))]
     async fn handle(&self, conn: &mut Connection) -> eyre::Result<()> {
-        let auth_session = conn
-            .auth_session
-            .insert(AuthSession::new(self.username.into()));
-        let pub_key = conn.keys.pub_key_der.as_ref();
-        let verify_token = &auth_session.verify_token;
-        trace!(?auth_session, ?pub_key, ?verify_token);
-
         if conn.config.is_online {
-            RequestBuilder::new(1)
-                .var_blob(SERVER_ID)
-                .var_blob(pub_key)
-                .var_blob(verify_token)
+            let auth_session = conn
+                .auth_session
+                .insert(AuthSession::new(self.username.into()));
+            let pub_key = conn.keys.pub_key_der.as_ref();
+            let verify_token = &auth_session.verify_token;
+            trace!(?auth_session, ?pub_key, ?verify_token);
+
+            ResponseBuilder::new(1)
+                .var_data(SERVER_ID)
+                .var_data(pub_key)
+                .var_data(verify_token)
                 .send(conn)
                 .await?;
         } else {
-            let player_uuid = Uuid::new_v4();
-            RequestBuilder::new(2)
-                .u128(player_uuid.as_u128())
-                .var_blob(&auth_session.username)
-                .send(conn)
-                .await?;
-            debug!("Login successful: transitioning into Play state");
-            conn.state = ConnectionState::Play;
-
-            // prematurely kick
-            conn.kick(
-                r#"{"text":"well... i haven't implemented like, the game yet lol. come back later XD"}"#
-            ).await?;
+            let player = Player {
+                uuid: Uuid::new_v4(),
+                username: self.username.to_string(),
+            };
+            login_success(conn, player).await?;
         }
 
         Ok(())
@@ -114,44 +105,33 @@ impl Packet for EncryptionResponse<'_> {
         trace!(?url);
         let auth_response: AuthResponse = reqwest::get(url).await?.json().await?;
         trace!(?auth_response);
-        debug!("Login successful: transitioning into Play state");
 
-        conn.state = ConnectionState::Play;
-        conn.cipher = Some(AesCipher::new_from_slices(&shared_secret, &shared_secret)?);
-
+        // Success! 🎉
         let player = Player {
             username: auth_response.name,
             uuid: auth_response.id,
         };
-        // Login success
-        RequestBuilder::new(2)
-            .u128(player.uuid.as_u128())
-            .var_blob(&player.username)
-            .send(conn)
-            .await?;
+        conn.cipher = Some(AesCipher::new_from_slices(&shared_secret, &shared_secret)?);
 
-        conn.server.join_game(player).await?;
-
-        // prematurely kick
-        conn.kick(
-            r#"{"text":"well... i haven't implemented like, the game yet lol. come back later XD"}"#
-        ).await?;
+        login_success(conn, player).await?;
         Ok(())
     }
 }
 
-#[derive(Debug, Nom)]
-struct LoginPluginResponse<'a> {
-    message_id: u32,
-    #[nom(Parse = "maybe(var_bytes)")]
-    data: Option<&'a [u8]>,
-}
-#[async_trait]
-impl Packet for LoginPluginResponse<'_> {
-    #[instrument(skip(conn))]
-    async fn handle(&self, conn: &mut Connection) -> eyre::Result<()> {
-        todo!()
-    }
+#[instrument(skip(conn))]
+async fn login_success(conn: &mut Connection, player: Player) -> eyre::Result<()> {
+    debug!("Login successful: transitioning into Play state");
+    conn.state = ConnectionState::Play;
+
+    // Login success
+    ResponseBuilder::new(2)
+        .add(&player.uuid)
+        .add(&player.username)
+        .send(conn)
+        .await?;
+
+    conn.join_game(player).await?;
+    Ok(())
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -160,6 +140,8 @@ struct AuthResponse {
     name: String,
 }
 
+/// Minecraft's crappy hash algorithm that isn't found *anywhere*.
+/// Mojang, are you ok?
 fn minecraft_style_crappy_hash(input: &[u8]) -> String {
     if input[0] & 0x80 == 0x80 {
         // negative
@@ -192,6 +174,7 @@ mod tests {
     #[test]
     fn test_crappy_hash() {
         tracing_subscriber::fmt::init();
+        // shamelessly stolen from wiki.vg
         test(b"Notch", "4ed1f46bbe04bc756bcb17c0c7ce3e4632f06a48");
         test(b"jeb_", "-7c9d5b0044c130109a5d7b5fb5c317c02b4e28c1");
         test(b"simon", "88e16a1019277b15d58faf0541e11910eb756f6");
