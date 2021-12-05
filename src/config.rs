@@ -1,7 +1,10 @@
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use serde::{Deserialize, Serialize};
-use tracing::{warn, debug};
+use tracing::{debug, warn};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -11,6 +14,8 @@ pub struct Config {
     pub max_players: usize,
     #[serde(default = "Config::default_motd")]
     pub motd: String,
+    #[serde(default = "Config::default_favicon_path")]
+    pub favicon_path: PathBuf,
 }
 
 impl Config {
@@ -25,13 +30,13 @@ impl Config {
                 let config = toml::from_str(&s)?;
                 debug!(?config, "Read config");
                 Ok(config)
-            },
+            }
             Err(_) => {
                 warn!("Config file not found! Creating a default one...");
                 let default = Self::default();
                 fs::write(&path, toml::to_string_pretty(&default)?)?;
                 Ok(default)
-            },
+            }
         }
     }
     fn default_is_online() -> bool {
@@ -43,6 +48,9 @@ impl Config {
     fn default_motd() -> String {
         "Just another impostor Minecraft server".into()
     }
+    fn default_favicon_path() -> PathBuf {
+        "favicon.png".into()
+    }
 }
 
 impl Default for Config {
@@ -51,6 +59,7 @@ impl Default for Config {
             is_online: Self::default_is_online(),
             max_players: Self::default_max_players(),
             motd: Self::default_motd(),
+            favicon_path: Self::default_favicon_path(),
         }
     }
 }

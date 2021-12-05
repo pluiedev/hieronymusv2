@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use eyre::eyre;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tokio::sync::{mpsc, oneshot};
-use tracing::{instrument, trace, debug};
+use tracing::{debug, instrument, trace};
 use uuid::Uuid;
 
 use crate::config::Config;
@@ -12,50 +13,75 @@ pub struct Server {
     config: Arc<Config>,
     version: Version,
     players: Vec<Player>,
+    favicon: Option<String>,
 }
 
 impl Server {
-    pub fn new(rx: mpsc::Receiver<ServerEvent>, config: Arc<Config>) -> Self {
-        Server {
+    pub async fn new(rx: mpsc::Receiver<ServerEvent>, config: Arc<Config>) -> eyre::Result<Self> {
+        let favicon_path = &config.favicon_path;
+        trace!(?favicon_path);
+        let favicon = match tokio::fs::read(favicon_path).await {
+            Ok(image) => {
+                let mut favicon =
+                    String::with_capacity("data:image/png;base64,".len() + image.len() * 4 / 3 + 4);
+                favicon.push_str("data:image/png;base64,");
+                base64::encode_config_buf(image, base64::STANDARD, &mut favicon);
+                Some(favicon)
+            }
+            Err(_) => None,
+        };
+
+        Ok(Server {
             rx,
             config,
             version: Version::CURRENT,
             players: vec![],
+            favicon,
+        })
+    }
+
+    #[instrument(skip(self))]
+    pub async fn server_loop(mut self) -> eyre::Result<()> {
+        loop {
+            self.handle_events().await?;
         }
     }
 
     #[instrument(skip(self))]
-    pub async fn event_loop(mut self) -> eyre::Result<()> {
-        loop {
-            while let Some(ServerEvent(req)) = self.rx.recv().await {
-                match req {
-                    Inner::GetServerStatus { tx } => {
-                        let json = serde_json::json!({
-                            "version": {
-                                "name": self.version.name,
-                                "protocol": self.version.protocol_version,
-                            },
-                            "players": {
-                                "max": self.config.max_players,
-                                "online": self.players.len(),
-                                "sample": self.players.iter().take(5).collect::<Vec<_>>()
-                            },
-                            "description": {
-                                "text": self.config.motd.clone()
-                            },
-                        });
-                        let json = serde_json::to_string(&json)?;
-                        trace!(?json);
-                        tx.send(json)
-                            .map_err(|_| eyre!("failed to send status data"))?;
-                    },
-                    Inner::JoinGame(player) => {
-                        debug!(?player, "Player joined");
-                        self.players.push(player);
+    pub async fn handle_events(&mut self) -> eyre::Result<()> {
+        while let Some(ServerEvent(req)) = self.rx.recv().await {
+            match req {
+                Inner::GetServerStatus { tx } => {
+                    let mut json = json!({
+                        "version": {
+                            "name": self.version.name,
+                            "protocol": self.version.protocol_version,
+                        },
+                        "players": {
+                            "max": self.config.max_players,
+                            "online": self.players.len(),
+                            "sample": self.players.iter().take(5).collect::<Vec<_>>()
+                        },
+                        "description": {
+                            "text": &self.config.motd
+                        },
+                    });
+                    if let Some(favicon) = &self.favicon {
+                        json["favicon"] = json!(favicon);
                     }
+
+                    let json = serde_json::to_string(&json)?;
+                    trace!(?json);
+                    tx.send(json)
+                        .map_err(|_| eyre!("failed to send status data"))?;
+                }
+                Inner::JoinGame(player) => {
+                    debug!(?player, "Player joined");
+                    self.players.push(player);
                 }
             }
         }
+        Ok(())
     }
 }
 
@@ -105,9 +131,7 @@ impl ServerHook {
         Ok(rx.await?)
     }
     pub async fn join_game(&self, player: Player) -> eyre::Result<()> {
-        self.0
-            .send(ServerEvent(Inner::JoinGame(player)))
-            .await?;
+        self.0.send(ServerEvent(Inner::JoinGame(player))).await?;
         Ok(())
     }
 }

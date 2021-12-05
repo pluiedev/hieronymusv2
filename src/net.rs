@@ -152,7 +152,10 @@ impl ResponseBuilder {
         self
     }
     #[instrument(skip_all)]
-    pub fn add_many<'builder, T: IntoResponseField>(&'builder mut self, ts: &[T]) -> &'builder mut Self {
+    pub fn add_many<'builder, T: IntoResponseField>(
+        &'builder mut self,
+        ts: &[T],
+    ) -> &'builder mut Self {
         self.varint(ts.len() as u32);
         for t in ts {
             t.into_request_field(self);

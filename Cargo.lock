@@ -431,6 +431,7 @@ version = "0.1.0"
 dependencies = [
  "aes",
  "async-trait",
+ "base64",
  "bitflags",
  "cfb8",
  "cipher",
@@ -441,6 +442,7 @@ dependencies = [
  "nom",
  "nom-derive",
  "num-traits",
+ "once_cell",
  "parking_lot",
  "rand",
  "reqwest",
