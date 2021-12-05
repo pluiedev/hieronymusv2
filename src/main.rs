@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, env, fs};
 
 use auth::Keys;
 use server::{Server, ServerHook};
@@ -7,7 +7,7 @@ use tokio::{
     spawn,
     sync::mpsc,
 };
-use tracing::{info, instrument};
+use tracing::{info, instrument, debug};
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{prelude::*, EnvFilter};
 
@@ -24,7 +24,7 @@ pub mod varint;
 #[instrument]
 async fn main() -> eyre::Result<()> {
     setup()?;
-
+    
     info!("hieronymus v2");
 
     let (tx, rx) = mpsc::channel(100);

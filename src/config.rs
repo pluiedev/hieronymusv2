@@ -14,19 +14,12 @@ pub struct Config {
 }
 
 impl Config {
-    #[cfg(debug_assertions)]
-    pub const DEFAULT_PATH: &'static str = "./dev-home/config.toml";
-    #[cfg(not(debug_assertions))]
     pub const DEFAULT_PATH: &'static str = "./config.toml";
 
     pub fn read_from_default_path() -> eyre::Result<Self> {
         Self::read_from(Self::DEFAULT_PATH)
     }
     pub fn read_from<P: AsRef<Path>>(path: P) -> eyre::Result<Self> {
-        if cfg!(debug_assertions) {
-            fs::create_dir_all("./dev-home")?;
-        }
-
         match fs::read_to_string(&path) {
             Ok(s) => {
                 let config = toml::from_str(&s)?;
