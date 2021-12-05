@@ -30,10 +30,7 @@ async fn main() -> eyre::Result<()> {
     let (tx, rx) = mpsc::channel(100);
 
     let keys = Keys::new()?;
-    let config = Arc::new(Config {
-        is_online: true,
-        max_players: 69,
-    });
+    let config = Arc::new(Config::read_from_default_path()?);
     let server = Server::new(rx, config.clone());
     let hook = ServerHook(tx);
 

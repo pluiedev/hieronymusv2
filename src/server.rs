@@ -39,7 +39,10 @@ impl Server {
                                 "max": self.config.max_players,
                                 "online": self.players.len(),
                                 "sample": self.players.iter().take(5).collect::<Vec<_>>()
-                            }
+                            },
+                            "description": {
+                                "text": self.config.motd.clone()
+                            },
                         });
                         let json = serde_json::to_string(&json)?;
                         trace!(?json);
