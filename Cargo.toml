@@ -29,7 +29,7 @@ sha1 = "0.6.0"
 thiserror = "1.0.30"
 tokio = { version = "1.14.0", features = ["net", "macros", "rt", "sync", "rt-multi-thread", "io-util"] }
 toml = "0.5.8"
-tracing = "0.1.29"
+tracing = { version = "0.1.29", features = ["release_max_level_info"] }
 tracing-error = "0.2.0"
 tracing-futures = "0.2.5"
 tracing-subscriber = { version = "0.3.3", features = ["env-filter"] }

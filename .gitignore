@@ -1,4 +1,2 @@
 /target
-
-# only happens in dev
-config.toml
+/dev-home

@@ -14,14 +14,20 @@ pub struct Config {
 }
 
 impl Config {
+    #[cfg(debug_assertions)]
+    pub const DEFAULT_PATH: &'static str = "./dev-home/config.toml";
+    #[cfg(not(debug_assertions))]
     pub const DEFAULT_PATH: &'static str = "./config.toml";
 
     pub fn read_from_default_path() -> eyre::Result<Self> {
         Self::read_from(Self::DEFAULT_PATH)
     }
     pub fn read_from<P: AsRef<Path>>(path: P) -> eyre::Result<Self> {
-        let path = path.as_ref();
-        match fs::read_to_string(path) {
+        if cfg!(debug_assertions) {
+            fs::create_dir_all("./dev-home")?;
+        }
+
+        match fs::read_to_string(&path) {
             Ok(s) => {
                 let config = toml::from_str(&s)?;
                 debug!(?config, "Read config");
@@ -30,7 +36,7 @@ impl Config {
             Err(_) => {
                 warn!("Config file not found! Creating a default one...");
                 let default = Self::default();
-                fs::write(path, toml::to_string_pretty(&default)?)?;
+                fs::write(&path, toml::to_string_pretty(&default)?)?;
                 Ok(default)
             },
         }
