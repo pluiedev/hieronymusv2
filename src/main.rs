@@ -17,6 +17,7 @@ pub mod net;
 mod nom;
 pub mod server;
 pub mod varint;
+mod data;
 
 #[tokio::main]
 #[instrument]

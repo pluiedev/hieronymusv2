@@ -1,6 +1,6 @@
 //! [`nom`] utilities.
 
-use std::ops::RangeFrom;
+use std::{ops::RangeFrom, str::FromStr};
 
 use nom::{
     combinator::{map, map_opt, map_res},
@@ -9,11 +9,10 @@ use nom::{
     number::streaming::be_u8,
     IResult, InputIter, InputLength, Parser, Slice, ToUsize,
 };
-use nom_derive::Nom;
 
 use crate::{
     net::ConnectionState,
-    varint::{varint, VarInt},
+    varint::{varint, VarInt}, data::Identifier,
 };
 
 #[macro_export]
@@ -71,54 +70,6 @@ where
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default, Nom)]
-pub struct Angle(pub u8);
-
-pub trait Angular {
-    fn from_angle_degrees(angle: Angle) -> Self;
-    fn from_angle_radians(angle: Angle) -> Self;
-    fn into_angle_degrees_rounded(self) -> Angle;
-    fn into_angle_radians_rounded(self) -> Angle;
-}
-impl Angle {
-    pub fn from_degrees_rounded<F: Angular>(f: F) -> Self {
-        F::into_angle_degrees_rounded(f)
-    }
-    pub fn from_radians_rounded<F: Angular>(f: F) -> Self {
-        F::into_angle_radians_rounded(f)
-    }
-    pub fn to_degrees<F: Angular>(self) -> F {
-        F::from_angle_degrees(self)
-    }
-    pub fn to_radians<F: Angular>(self) -> F {
-        F::from_angle_radians(self)
-    }
-}
-macro_rules! angular_impl {
-    ($($ty:ty,$tau:expr);+) => {
-        $(
-            impl Angular for $ty {
-                fn from_angle_degrees(angle: Angle) -> Self {
-                    <$ty as std::convert::From<u8>>::from(angle.0) / 256.0 * 360.0
-                }
-                fn from_angle_radians(angle: Angle) -> Self {
-                    <$ty as std::convert::From<u8>>::from(angle.0) / 256.0 * $tau
-                }
-                fn into_angle_degrees_rounded(self) -> Angle {
-                    Angle((self / 360.0 * 256.0) as u8)
-                }
-                fn into_angle_radians_rounded(self) -> Angle {
-                    Angle((self / 360.0 * $tau) as u8)
-                }
-            }
-        )+
-    };
-}
-angular_impl!(
-    f32, std::f32::consts::TAU;
-    f64, std::f64::consts::TAU
-);
-
 //endregion
 //region Byte slice-specific operations
 
@@ -172,6 +123,10 @@ pub fn connection_state(i: &[u8]) -> IResult<&[u8], ConnectionState> {
         2 => Some(ConnectionState::Login),
         _ => None,
     })(i)
+}
+
+pub fn identifier(i: &[u8]) -> IResult<&[u8], Identifier> {
+    map_res(var_str, Identifier::from_str)
 }
 //endregion
 //region Misc
