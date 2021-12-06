@@ -35,7 +35,7 @@ struct Ping(u64);
 impl Packet for Ping {
     #[instrument(skip(conn))]
     async fn handle(&self, conn: &mut Connection) -> eyre::Result<()> {
-        ResponseBuilder::new(1).add(&self.0).send(conn).await?;
+        ResponseBuilder::new(1).add(self.0).send(conn).await?;
 
         Ok(())
     }

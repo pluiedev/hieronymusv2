@@ -9,6 +9,7 @@ use aes::{cipher::AsyncStreamCipher, Aes128};
 use cfb8::Cfb8;
 use eyre::bail;
 use nom::{multi::length_data, HexDisplay, IResult};
+use serde::Serialize;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
@@ -86,7 +87,7 @@ impl Connection {
         }
     }
 
-    #[instrument(skip_all)]
+    #[instrument(skip(self, input))]
     pub async fn read_packet<'data>(&mut self, mut input: &'data [u8]) -> IResult<&'data [u8], ()> {
         loop {
             trace!(?input);
@@ -147,18 +148,18 @@ impl ResponseBuilder {
         }
     }
     #[instrument(skip_all)]
-    pub fn add<'builder, T: IntoResponseField>(&'builder mut self, t: &T) -> &'builder mut Self {
-        t.into_request_field(self);
+    pub fn add<'builder, T: ToResponseField>(&'builder mut self, t: T) -> &'builder mut Self {
+        t.to_request_field(self);
         self
     }
     #[instrument(skip_all)]
-    pub fn add_many<'builder, T: IntoResponseField>(
+    pub fn add_many<'builder, T: ToResponseField>(
         &'builder mut self,
         ts: &[T],
     ) -> &'builder mut Self {
         self.varint(ts.len() as u32);
         for t in ts {
-            t.into_request_field(self);
+            t.to_request_field(self);
         }
         self
     }
@@ -181,6 +182,33 @@ impl ResponseBuilder {
         trace!(?b);
         self.varint(b.len() as u32).raw_data(b)
     }
+    #[instrument(skip_all)]
+    pub fn nbt<'builder, T: Serialize>(&'builder mut self, t: T) -> eyre::Result<&'builder mut Self> {
+        let mut buf = vec![];
+        nbt::to_writer(&mut buf, &t, None)?;
+        trace!(?buf);
+        Ok(self.var_data(buf))
+    }
+    #[instrument(skip_all)]
+    pub fn gzipped_nbt<'builder, T: Serialize>(&'builder mut self, t: T) -> eyre::Result<&'builder mut Self> {
+        let mut buf = vec![];
+        nbt::to_gzip_writer(&mut buf, &t, None)?;
+        trace!(?buf);
+        Ok(self.var_data(buf))
+    }
+    #[instrument(skip_all)]
+    pub fn zlibbed_nbt<'builder, T: Serialize>(&'builder mut self, t: T) -> eyre::Result<&'builder mut Self> {
+        let mut buf = vec![];
+        nbt::to_zlib_writer(&mut buf, &t, None)?;
+        trace!(?buf);
+        Ok(self.var_data(buf))
+    }
+    #[instrument(skip_all)]
+    pub fn json<'builder, T: Serialize>(&'builder mut self, t: T) -> eyre::Result<&'builder mut Self> {
+        let buf = serde_json::to_string(&t)?;
+        trace!(?buf);
+        Ok(self.var_data(buf))
+    }
 
     #[instrument(skip_all)]
     pub async fn send(&mut self, conn: &mut Connection) -> eyre::Result<()> {
@@ -199,36 +227,36 @@ impl ResponseBuilder {
     }
 }
 
-pub trait IntoResponseField {
-    fn into_request_field(&self, builder: &mut ResponseBuilder);
+pub trait ToResponseField {
+    fn to_request_field(&self, builder: &mut ResponseBuilder);
 }
-impl IntoResponseField for str {
-    fn into_request_field(&self, builder: &mut ResponseBuilder) {
+impl ToResponseField for &str {
+    fn to_request_field(&self, builder: &mut ResponseBuilder) {
         builder.var_data(self);
     }
 }
-impl IntoResponseField for String {
-    fn into_request_field(&self, builder: &mut ResponseBuilder) {
-        self.as_str().into_request_field(builder)
+impl ToResponseField for &String {
+    fn to_request_field(&self, builder: &mut ResponseBuilder) {
+        self.as_str().to_request_field(builder)
     }
 }
-impl IntoResponseField for bool {
-    fn into_request_field(&self, builder: &mut ResponseBuilder) {
-        builder.add(if *self { &1u8 } else { &0u8 });
+impl ToResponseField for bool {
+    fn to_request_field(&self, builder: &mut ResponseBuilder) {
+        builder.add(if *self { 1u8 } else { 0u8 });
     }
 }
-impl IntoResponseField for Uuid {
-    fn into_request_field(&self, builder: &mut ResponseBuilder) {
-        builder.add(&self.as_u128());
+impl ToResponseField for Uuid {
+    fn to_request_field(&self, builder: &mut ResponseBuilder) {
+        builder.add(self.as_u128());
     }
 }
 macro_rules! into_request_field_primitive_impls {
     ($($ty:ty),+) => {
         $(
-            impl IntoResponseField for $ty {
+            impl ToResponseField for $ty {
                 #[tracing::instrument]
                 #[inline]
-                fn into_request_field(&self, builder: &mut ResponseBuilder) {
+                fn to_request_field(&self, builder: &mut ResponseBuilder) {
                     builder.raw_data(&self.to_be_bytes());
                 }
             }

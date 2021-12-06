@@ -125,7 +125,7 @@ async fn login_success(conn: &mut Connection, player: Player) -> eyre::Result<()
 
     // Login success
     ResponseBuilder::new(2)
-        .add(&player.uuid)
+        .add(player.uuid)
         .add(&player.username)
         .send(conn)
         .await?;
