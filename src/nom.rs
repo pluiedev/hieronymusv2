@@ -124,10 +124,6 @@ pub fn connection_state(i: &[u8]) -> IResult<&[u8], ConnectionState> {
         _ => None,
     })(i)
 }
-
-pub fn identifier(i: &[u8]) -> IResult<&[u8], Identifier> {
-    map_res(var_str, Identifier::from_str)
-}
 //endregion
 //region Misc
 

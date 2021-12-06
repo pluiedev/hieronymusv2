@@ -87,7 +87,7 @@ impl Connection {
         }
     }
 
-    #[instrument(skip(self, input))]
+    #[instrument(skip_all)]
     pub async fn read_packet<'data>(&mut self, mut input: &'data [u8]) -> IResult<&'data [u8], ()> {
         loop {
             trace!(?input);

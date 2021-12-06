@@ -1,10 +1,12 @@
 //! Some data types used by Minecraft.
 
-use std::{ops::Deref, str::FromStr, borrow::Borrow};
+use std::str::FromStr;
 
-use nom::character::is_alphanumeric;
-use nom_derive::Nom;
+use nom::combinator::map_res;
+use nom_derive::{Nom, Parse};
 use thiserror::Error;
+
+use crate::nom::var_str;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Nom)]
 pub struct Position(u64);
@@ -26,7 +28,7 @@ impl Position {
     }
     pub fn z(self) -> i32 {
         let mut x = (self.0 << 38 & 0x3ffffff) as i32;
-        if x >= (1 << 25){
+        if x >= (1 << 25) {
             x -= 1 << 26;
         }
         x
@@ -84,32 +86,22 @@ angular_impl!(
     f64, std::f64::consts::TAU
 );
 
-pub struct OwnedIdentifier {
+// TODO: implement some kind of intern system/arena memory management
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Identifier {
     pub namespace: String,
     pub path: String,
 }
-impl Borrow<Identifier<'_>> for OwnedIdentifier {
-    fn borrow(&self) -> &Identifier<'_> {
-        &Identifier {
-            namespace: &self.namespace,
-            path: &self.path,
-        }
-    }
-}
-impl AsRef<Identifier<'_>> for OwnedIdentifier {
-    fn as_ref(&self) -> &Identifier<'_> {
-        &Identifier {
-            namespace: &self.namespace,
-            path: &self.path,
-        }
-    }
-}
 
-pub struct Identifier<'a> {
-    pub namespace: &'a str,
-    pub path: &'a str,
+impl Identifier {
+    pub fn as_ref<'a>(&'a self) -> IdentifierRef<'a> {
+        IdentifierRef {
+            namespace: &self.namespace,
+            path: &self.path,
+        }
+    }
 }
-impl FromStr for Identifier<'_> {
+impl FromStr for Identifier {
     type Err = ParseIdentifierError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -117,30 +109,42 @@ impl FromStr for Identifier<'_> {
         if !s.is_ascii() {
             return Err(NotAscii);
         }
-        
-        let s = s.split(':');
-        let namespace = s.next().ok_or(ExpectedSeparator)?;
+
+        let mut split = s.split(':');
+        let namespace = split.next().ok_or(ExpectedSeparator)?.to_string();
+        let path = split.next().ok_or(ExpectedSeparator)?.to_string();
+
         if let Some(c) = namespace.bytes().find(invalid_namespace_char) {
-            return Err(InvalidCharacterInNamespace(char::from(c)))
+            return Err(InvalidCharacterInNamespace(char::from(c)));
         }
-        let path = s.next().ok_or(ExpectedSeparator)?;
         if let Some(c) = path.bytes().find(invalid_path_char) {
-            return Err(InvalidCharacterInPath(char::from(c)))
+            return Err(InvalidCharacterInPath(char::from(c)));
         }
-        Ok(Identifier { namespace, path })
-        
+        Ok(Self { namespace, path })
     }
 }
+impl Parse<&[u8]> for Identifier {
+    fn parse(i: &[u8]) -> nom::IResult<&[u8], Self> {
+        map_res(var_str, Self::from_str)(i)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdentifierRef<'a> {
+    pub namespace: &'a str,
+    pub path: &'a str,
+}
+
 fn invalid_namespace_char(c: &u8) -> bool {
     match *c {
         b'0'..=b'9' | b'a'..=b'z' | b'.' | b'_' | b'-' => false,
-        _ => true
+        _ => true,
     }
 }
 fn invalid_path_char(c: &u8) -> bool {
     match *c {
         b'0'..=b'9' | b'a'..=b'z' | b'.' | b'_' | b'-' | b'/' => false,
-        _ => true
+        _ => true,
     }
 }
 #[derive(Debug, Error)]
@@ -153,15 +157,4 @@ pub enum ParseIdentifierError {
     NotAscii,
     #[error("Expected separator `:`")]
     ExpectedSeparator,
-}
-
-impl ToOwned for Identifier<'_> {
-    type Owned = OwnedIdentifier;
-
-    fn to_owned(&self) -> Self::Owned {
-        OwnedIdentifier {
-            namespace: self.namespace.into(),
-            path: self.path.into(),
-        }
-    }
 }
