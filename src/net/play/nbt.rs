@@ -2,8 +2,8 @@ use serde::{Serialize, ser::SerializeStruct};
 
 #[derive(Debug)]
 pub struct DimensionCodec {
-    pub dimension_type: Vec<DimensionType>,
-    pub biome: Vec<BiomeEntry>,
+    pub dimension_type: Vec<Entry<DimensionType>>,
+    pub biome: Vec<Entry<BiomeProperties>>,
 }
 impl Serialize for DimensionCodec {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -13,11 +13,11 @@ impl Serialize for DimensionCodec {
         let mut codec = serializer.serialize_struct("DimensionCodec", 2)?;
         codec.serialize_field("minecraft:dimension_type", &Registry {
             registry_type: "minecraft:dimension_type",
-            list: &self.dimension_type
+            value: &self.dimension_type
         })?;
         codec.serialize_field("minecraft:worldgen/biome", &Registry {
             registry_type: "minecraft:worldgen/biome",
-            list: &self.biome
+            value: &self.biome
         })?;
         codec.end()
     }
@@ -27,7 +27,14 @@ impl Serialize for DimensionCodec {
 struct Registry<'a, T> {
     #[serde(rename = "type")]
     registry_type: &'a str,
-    list: &'a [T],
+    value: &'a [T],
+}
+
+#[derive(Debug, Serialize)]
+pub struct Entry<T> {
+    pub name: String,
+    pub id: i32,
+    pub element: T,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -51,13 +58,6 @@ pub struct DimensionType {
 }
 
 #[derive(Debug, Serialize)]
-pub struct BiomeEntry {
-    pub name: String,
-    pub id: i32,
-    pub element: BiomeProperties
-}
-
-#[derive(Debug, Serialize)]
 pub struct BiomeProperties {
     pub precipitation: String,
     pub depth: f32,
@@ -66,7 +66,7 @@ pub struct BiomeProperties {
     pub downfall: f32,
     pub category: String,
     pub temperature_modifier: Option<String>,
-    pub effects: Option<BiomeEffects>,
+    pub effects: BiomeEffects,
     pub particle: Option<BiomeParticle>,
 }
 

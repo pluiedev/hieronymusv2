@@ -98,7 +98,7 @@ impl Connection {
                 ConnectionState::Handshake => handshake::read_packet(data),
                 ConnectionState::Status => status::read_packet(data),
                 ConnectionState::Login => login::read_packet(data),
-                ConnectionState::Play => todo!(),
+                ConnectionState::Play => play::read_packet(data),
             }?;
             trace!(?rem, ?packet);
             assert!(rem.is_empty());
@@ -209,7 +209,7 @@ impl ResponseBuilder {
         let mut buf = vec![];
         nbt::to_writer(&mut buf, &t, None)?;
         trace!(?buf);
-        Ok(self.var_data(buf))
+        Ok(self.raw_data(buf))
     }
     #[instrument(skip_all)]
     pub fn gzipped_nbt<'builder, T: Serialize>(
@@ -219,7 +219,7 @@ impl ResponseBuilder {
         let mut buf = vec![];
         nbt::to_gzip_writer(&mut buf, &t, None)?;
         trace!(?buf);
-        Ok(self.var_data(buf))
+        Ok(self.raw_data(buf))
     }
     #[instrument(skip_all)]
     pub fn zlibbed_nbt<'builder, T: Serialize>(
@@ -229,7 +229,7 @@ impl ResponseBuilder {
         let mut buf = vec![];
         nbt::to_zlib_writer(&mut buf, &t, None)?;
         trace!(?buf);
-        Ok(self.var_data(buf))
+        Ok(self.raw_data(buf))
     }
     #[instrument(skip_all)]
     pub fn json<'builder, T: Serialize>(

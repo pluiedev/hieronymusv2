@@ -33,7 +33,10 @@ pub fn read_packet(input: &[u8]) -> IResult<&[u8], BoxedPacket<'_>> {
         0x07 => ClickWindowButton,
         0x08 => ClickWindow,
         0x09 => CloseWindow,
-        0x0a => PluginMessage
+        0x0a => PluginMessage,
+        0x11 => PlayerPosition,
+        0x12 => PlayerPositionAndRotation,
+        0x13 => PlayerRotation
     }
 }
 #[derive(Debug, Nom)]
@@ -126,6 +129,17 @@ impl Packet for ClientSettings<'_> {
         Ok(())
     }
 }
+bitflags! {
+    struct DisplayedSkinParts: u8 {
+        const CAPE = 0x01;
+        const JACKET = 0x02;
+        const LEFT_SLEEVE = 0x04;
+        const RIGHT_SLEEVE = 0x08;
+        const LEFT_PANTS_LEG = 0x10;
+        const RIGHT_PANTS_LEG = 0x20;
+        const HAT = 0x40;
+    }
+}
 
 #[derive(Debug, Nom)]
 struct TabComplete<'a> {
@@ -201,19 +215,58 @@ impl Packet for PluginMessage<'_> {
     }
 }
 
-bitflags! {
-    struct DisplayedSkinParts: u8 {
-        const CAPE = 0x01;
-        const JACKET = 0x02;
-        const LEFT_SLEEVE = 0x04;
-        const RIGHT_SLEEVE = 0x08;
-        const LEFT_PANTS_LEG = 0x10;
-        const RIGHT_PANTS_LEG = 0x20;
-        const HAT = 0x40;
+#[derive(Debug, Nom)]
+struct PlayerPosition {
+    x: f64,
+    feet_y: f64,
+    z: f64,
+    #[nom(Parse = "boolean")]
+    on_ground: bool,
+}
+#[async_trait]
+impl Packet for PlayerPosition {
+    #[instrument(skip(conn))]
+    async fn handle(&self, conn: &mut Connection) -> eyre::Result<()> {
+        Ok(())
+    }
+}
+
+#[derive(Debug, Nom)]
+struct PlayerPositionAndRotation {
+    x: f64,
+    feet_y: f64,
+    z: f64,
+    yaw: f32,
+    pitch: f32,
+    #[nom(Parse = "boolean")]
+    on_ground: bool,
+}
+#[async_trait]
+impl Packet for PlayerPositionAndRotation {
+    #[instrument(skip(conn))]
+    async fn handle(&self, conn: &mut Connection) -> eyre::Result<()> {
+        Ok(())
+    }
+}
+
+#[derive(Debug, Nom)]
+struct PlayerRotation {
+    yaw: f32,
+    pitch: f32,
+    #[nom(Parse = "boolean")]
+    on_ground: bool,
+}
+
+#[async_trait]
+impl Packet for PlayerRotation {
+    #[instrument(skip(conn))]
+    async fn handle(&self, conn: &mut Connection) -> eyre::Result<()> {
+        Ok(())
     }
 }
 
 impl Connection {
+    #[instrument(skip(self))]
     pub async fn join_game(&mut self, player: Player) -> eyre::Result<()> {
         self.server.join_game(player).await?;
 
@@ -244,24 +297,41 @@ impl Connection {
             downfall: 0.4,
             category: "plains".into(),
             temperature_modifier: None,
-            effects: None,
+            effects: nbt::BiomeEffects {
+                sky_color: 0x7fa1ff,
+                water_fog_color: 0x7fa1ff,
+                fog_color: 0x7fa1ff,
+                water_color: 0x7fa1ff,
+                foliage_color: None,
+                grass_color: None,
+                grass_color_modifier: None,
+                music: None,
+                ambient_sound: None,
+                additions_sound: None,
+                mood_sound: None,
+            },
             particle: None,
         };
-        let biome = nbt::BiomeEntry {
-            name: "plains".into(),
+        let biome_entry = nbt::Entry {
+            name: "minecraft:plains".into(),
             id: 1,
             element: biome,
         };
+        let dimension_entry = nbt::Entry {
+            name: "hieronymus:wonderland".into(),
+            id: 0,
+            element: dimension_type.clone(),
+        };
         let dimension_codec = nbt::DimensionCodec {
-            dimension_type: vec![dimension_type.clone()],
-            biome: vec![biome],
+            dimension_type: vec![dimension_entry],
+            biome: vec![biome_entry],
         };
 
         ResponseBuilder::new(0x26)
-            .add(0) // EID
+            .add(0u32) // EID
             .add(false) // not hardcore
-            .add(0) // survival
-            .add(-1) // no previous gamemode
+            .add(0u8) // survival
+            .add(-1i8) // no previous gamemode
             .add_many(&["hieronymus:wonderland"]) // world names
             .nbt(dimension_codec)? // dimension codec
             .nbt(dimension_type)? // dimension
@@ -269,7 +339,6 @@ impl Connection {
             .add(rand::random::<u64>()) // hashed seed
             .varint(0u32) // max players (ignored)
             .varint(10u32) // view distance
-            .varint(10u32) // simulation distance
             .add(false) // reduced debug info
             .add(true) // enable respawn screen
             .add(false) // is debug world
@@ -277,11 +346,68 @@ impl Connection {
             .send(self)
             .await?;
 
-        // prematurely kick
-        self.kick(
-            r#"{"text":"well... i haven't implemented like, the game yet lol. come back later XD"}"#
+        use AbsOrRel::*;
+        self.player_position_and_look(
+            Absolute(69.0),
+            Relative(0.0),
+            Absolute(420.0),
+            Absolute(0.0),
+            Absolute(0.0),
+            false
         ).await?;
+        // prematurely kick
+        // self.kick(
+        //     r#"{"text":"well... i haven't implemented like, the game yet lol. come back later XD"}"#
+        // ).await?;
 
         Ok(())
+    }
+
+    #[instrument(skip(self))]
+    pub async fn player_position_and_look(
+        &mut self,
+        x: AbsOrRel<f64>,
+        y: AbsOrRel<f64>,
+        z: AbsOrRel<f64>,
+        yaw: AbsOrRel<f32>,
+        pitch: AbsOrRel<f32>,
+        dismount_vehicle: bool,
+    ) -> eyre::Result<()> {
+        let mut flags = 0;
+        let x = x.unwrap_and_set_flag(0b00001, &mut flags);
+        let y = y.unwrap_and_set_flag(0b00010, &mut flags);
+        let z = z.unwrap_and_set_flag(0b00100, &mut flags);
+        let yaw = yaw.unwrap_and_set_flag(0b01000, &mut flags);
+        let pitch = pitch.unwrap_and_set_flag(0b10000, &mut flags);
+        let teleport_id = rand::random::<u32>();
+
+        ResponseBuilder::new(0x38)
+            .add(x)
+            .add(y)
+            .add(z)
+            .add(yaw)
+            .add(pitch)
+            .add(flags)
+            .varint(teleport_id)
+            .add(dismount_vehicle)
+            .send(self)
+            .await
+    }
+}
+
+#[derive(Debug)]
+pub enum AbsOrRel<T> {
+    Absolute(T),
+    Relative(T),
+}
+impl<T> AbsOrRel<T> {
+    pub fn unwrap_and_set_flag(self, flag: u8, flags: &mut u8) -> T {
+        match self {
+            Self::Absolute(t) => t,
+            Self::Relative(t) => {
+                *flags |= flag;
+                t
+            }
+        }
     }
 }

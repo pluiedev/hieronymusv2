@@ -52,5 +52,13 @@
 		"body": [
 			"#[nom(Parse = \"$0\")]",
 		]
+	},
+	"boolean": {
+		"scope": "rust",
+		"prefix": "bl",
+		"body": [
+			"#[nom(Parse = \"boolean\")]",
+			"$0: bool,",
+		]
 	}
 }
