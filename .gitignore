@@ -1,2 +1,6 @@
 /target
 /dev-home
+
+# OS-specific BS
+.DS_Store
+desktop.ini

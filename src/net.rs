@@ -164,6 +164,25 @@ impl ResponseBuilder {
         self
     }
     #[instrument(skip_all)]
+    pub fn try_add<'builder, T: TryToResponseField>(
+        &'builder mut self,
+        t: T,
+    ) -> Result<&'builder mut Self, T::Err> {
+        t.try_to_request_field(self)?;
+        Ok(self)
+    }
+    #[instrument(skip_all)]
+    pub fn try_add_many<'builder, T: TryToResponseField>(
+        &'builder mut self,
+        ts: &[T],
+    ) -> Result<&'builder mut Self, T::Err> {
+        self.varint(ts.len() as u32);
+        for t in ts {
+            t.try_to_request_field(self)?;
+        }
+        Ok(self)
+    }
+    #[instrument(skip_all)]
     pub fn varint<'builder, V: VarInt>(&'builder mut self, v: V) -> &'builder mut Self {
         trace!(?v);
         varint::serialize_and_append(v, &mut self.data);
@@ -183,28 +202,40 @@ impl ResponseBuilder {
         self.varint(b.len() as u32).raw_data(b)
     }
     #[instrument(skip_all)]
-    pub fn nbt<'builder, T: Serialize>(&'builder mut self, t: T) -> eyre::Result<&'builder mut Self> {
+    pub fn nbt<'builder, T: Serialize>(
+        &'builder mut self,
+        t: T,
+    ) -> Result<&'builder mut Self, nbt::Error> {
         let mut buf = vec![];
         nbt::to_writer(&mut buf, &t, None)?;
         trace!(?buf);
         Ok(self.var_data(buf))
     }
     #[instrument(skip_all)]
-    pub fn gzipped_nbt<'builder, T: Serialize>(&'builder mut self, t: T) -> eyre::Result<&'builder mut Self> {
+    pub fn gzipped_nbt<'builder, T: Serialize>(
+        &'builder mut self,
+        t: T,
+    ) -> Result<&'builder mut Self, nbt::Error> {
         let mut buf = vec![];
         nbt::to_gzip_writer(&mut buf, &t, None)?;
         trace!(?buf);
         Ok(self.var_data(buf))
     }
     #[instrument(skip_all)]
-    pub fn zlibbed_nbt<'builder, T: Serialize>(&'builder mut self, t: T) -> eyre::Result<&'builder mut Self> {
+    pub fn zlibbed_nbt<'builder, T: Serialize>(
+        &'builder mut self,
+        t: T,
+    ) -> Result<&'builder mut Self, nbt::Error> {
         let mut buf = vec![];
         nbt::to_zlib_writer(&mut buf, &t, None)?;
         trace!(?buf);
         Ok(self.var_data(buf))
     }
     #[instrument(skip_all)]
-    pub fn json<'builder, T: Serialize>(&'builder mut self, t: T) -> eyre::Result<&'builder mut Self> {
+    pub fn json<'builder, T: Serialize>(
+        &'builder mut self,
+        t: T,
+    ) -> Result<&'builder mut Self, serde_json::Error> {
         let buf = serde_json::to_string(&t)?;
         trace!(?buf);
         Ok(self.var_data(buf))
@@ -264,3 +295,9 @@ macro_rules! into_request_field_primitive_impls {
     };
 }
 into_request_field_primitive_impls!(u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64);
+
+pub trait TryToResponseField {
+    type Err;
+
+    fn try_to_request_field(&self, builder: &mut ResponseBuilder) -> Result<(), Self::Err>;
+}

@@ -1,6 +1,6 @@
 use std::{
-    fs,
-    path::{Path, PathBuf},
+    fs::{self, File},
+    path::{Path, PathBuf}, io::Write, time::SystemTime,
 };
 
 use serde::{Deserialize, Serialize};
@@ -9,7 +9,7 @@ use tracing::{debug, warn};
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default = "Config::default_is_online")]
-    pub is_online: bool,
+    pub online_mode: bool,
     #[serde(default = "Config::default_max_players")]
     pub max_players: usize,
     #[serde(default = "Config::default_motd")]
@@ -33,8 +33,12 @@ impl Config {
             }
             Err(_) => {
                 warn!("Config file not found! Creating a default one...");
-                let default = Self::default();
-                fs::write(&path, toml::to_string_pretty(&default)?)?;
+                let default = include_str!("config/default_config.toml");
+                let mut file = File::create(&path)?;
+                let timestamp = format!("# {}\n", humantime::format_rfc3339(SystemTime::now()));
+                file.write(&timestamp.into_bytes())?;
+                file.write(default.as_bytes())?;
+                let default = toml::from_str(default)?;
                 Ok(default)
             }
         }
@@ -50,16 +54,5 @@ impl Config {
     }
     fn default_favicon_path() -> PathBuf {
         "favicon.png".into()
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            is_online: Self::default_is_online(),
-            max_players: Self::default_max_players(),
-            motd: Self::default_motd(),
-            favicon_path: Self::default_favicon_path(),
-        }
     }
 }

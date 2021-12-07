@@ -37,7 +37,7 @@ struct LoginStart<'a> {
 impl Packet for LoginStart<'_> {
     #[instrument(skip(conn))]
     async fn handle(&self, conn: &mut Connection) -> eyre::Result<()> {
-        if conn.config.is_online {
+        if conn.config.online_mode {
             let auth_session = conn
                 .auth_session
                 .insert(AuthSession::new(self.username.into()));

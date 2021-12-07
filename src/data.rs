@@ -4,9 +4,10 @@ use std::str::FromStr;
 
 use nom::combinator::map_res;
 use nom_derive::{Nom, Parse};
+use serde::Serialize;
 use thiserror::Error;
 
-use crate::nom::var_str;
+use crate::{net::TryToResponseField, nom::var_str, varint::varint};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Nom)]
 pub struct Position(u64);
@@ -35,8 +36,51 @@ impl Position {
     }
 }
 
-#[derive(Clone, Debug, Nom)]
-pub struct Slot;
+pub type Slot = Option<SlotData>;
+
+#[derive(Clone, Debug)]
+pub struct SlotData {
+    id: u32,
+    count: u8,
+    nbt: Option<SlotNbt>,
+}
+
+impl TryToResponseField for SlotData {
+    type Err = nbt::Error;
+    fn try_to_request_field(&self, builder: &mut crate::net::ResponseBuilder) -> Result<(), Self::Err> {
+        builder
+            .add(self.id)
+            .add(self.count);
+        match &self.nbt {
+            Some(nbt) => builder.nbt(nbt)?,
+            None => builder.add(0u8), // TAG_End
+        };
+        Ok(())
+    }
+}
+impl Parse<&[u8]> for SlotData {
+    fn parse(i: &[u8]) -> nom::IResult<&[u8], Self, nom::error::Error<&[u8]>> {
+        use nom::{combinator::peek, number::streaming::be_u8};
+
+        let (i, id) = varint::<u32>(i)?;
+        let (i, count) = be_u8(i)?;
+        let (i, test) = peek(be_u8)(i)?;
+        let slot = SlotData {
+            id,
+            count,
+            nbt: None,
+        };
+
+        Ok((i, slot))
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SlotNbt {
+    damage: i32,
+    unbreakable: bool,
+    // TODO
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default, Nom)]
 pub struct Angle(pub u8);

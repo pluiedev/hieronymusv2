@@ -1,0 +1,24 @@
+# Configuration file for hieronymus
+
+# If set to true, enables authentication on the server, which requires clients
+# to also enable authentication (i.e. online mode). Defaults to true.
+#
+# Setting this option to false allows unauthenticated players to join,
+# allowing players who haven't paid the game or "cracked" the game to play,
+# which could allow attackers to compromise the server more easily.
+#
+# Therefore, it is recommended to keep this option set to true unless your
+# players must be able to join your server without a valid, usable Minecraft
+# account.
+online_mode = true
+
+# Maximum amount of players this server accepts. Defaults to 20.
+max_players = 20
+
+# The "message of the day" that is displayed on a client's server list.
+# Defaults to 'Just another Minecraft server powered by hieronymus'.
+motd = 'Just another Minecraft server powered by hieronymus'
+
+# The default path of the server favicon. The favicon will be replaced with the
+# default monochrome favicon if one is not found at this path. Defaults to 'favicon.png'
+favicon_path = 'favicon.png'
