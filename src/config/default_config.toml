@@ -16,8 +16,8 @@ online_mode = true
 max_players = 20
 
 # The "message of the day" that is displayed on a client's server list.
-# Defaults to 'Just another Minecraft server powered by hieronymus'.
-motd = 'Just another Minecraft server powered by hieronymus'
+# Defaults to 'Just another hieronymus-based Minecraft server'.
+motd = 'Just another hieronymus-based Minecraft server'
 
 # The default path of the server favicon. The favicon will be replaced with the
 # default monochrome favicon if one is not found at this path. Defaults to 'favicon.png'

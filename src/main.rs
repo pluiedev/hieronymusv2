@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use auth::Keys;
 use color_eyre::Help;
 use eyre::Context;
+use net::auth::Keys;
 use server::{Server, ServerHook};
 use tokio::{net::TcpListener, spawn, sync::mpsc};
 use tracing::{info, instrument};
@@ -11,13 +11,12 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use crate::{config::Config, net::Connection};
 
-mod auth;
 mod config;
+mod data;
 pub mod net;
 mod nom;
 pub mod server;
 pub mod varint;
-mod data;
 
 #[tokio::main]
 #[instrument]

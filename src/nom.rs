@@ -1,6 +1,6 @@
 //! [`nom`] utilities.
 
-use std::{ops::RangeFrom, str::FromStr};
+use std::ops::RangeFrom;
 
 use nom::{
     combinator::{map, map_opt, map_res},
@@ -12,7 +12,7 @@ use nom::{
 
 use crate::{
     net::ConnectionState,
-    varint::{varint, VarInt}, data::Identifier,
+    varint::{varint, VarInt},
 };
 
 #[macro_export]

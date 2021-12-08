@@ -1,5 +1,3 @@
-mod nbt;
-
 use async_trait::async_trait;
 use bitflags::bitflags;
 use nom::{
@@ -270,62 +268,9 @@ impl Connection {
     pub async fn join_game(&mut self, player: Player) -> eyre::Result<()> {
         self.server.join_game(player).await?;
 
+        //TODO
+        let dimension_info = self.server.get_dimension_info().await?;
         // Join game
-        let dimension_type = nbt::DimensionType {
-            piglin_safe: false,
-            natural: true,
-            ambient_light: 0.0,
-            fixed_time: None,
-            infiniburn: "hieronymus:infiniburn_wonderland".into(),
-            respawn_anchor_works: false,
-            has_skylight: true,
-            bed_works: true,
-            effects: "hieronymus:wonderland".into(),
-            has_raids: false,
-            min_y: 0,
-            height: 256,
-            logical_height: 256,
-            coordinate_scale: 1.0,
-            ultrawarm: false,
-            has_ceiling: false,
-        };
-        let biome = nbt::BiomeProperties {
-            precipitation: "rain".into(),
-            depth: 0.125,
-            temperature: 0.8,
-            scale: 0.05,
-            downfall: 0.4,
-            category: "plains".into(),
-            temperature_modifier: None,
-            effects: nbt::BiomeEffects {
-                sky_color: 0x7fa1ff,
-                water_fog_color: 0x7fa1ff,
-                fog_color: 0x7fa1ff,
-                water_color: 0x7fa1ff,
-                foliage_color: None,
-                grass_color: None,
-                grass_color_modifier: None,
-                music: None,
-                ambient_sound: None,
-                additions_sound: None,
-                mood_sound: None,
-            },
-            particle: None,
-        };
-        let biome_entry = nbt::Entry {
-            name: "minecraft:plains".into(),
-            id: 1,
-            element: biome,
-        };
-        let dimension_entry = nbt::Entry {
-            name: "hieronymus:wonderland".into(),
-            id: 0,
-            element: dimension_type.clone(),
-        };
-        let dimension_codec = nbt::DimensionCodec {
-            dimension_type: vec![dimension_entry],
-            biome: vec![biome_entry],
-        };
 
         ResponseBuilder::new(0x26)
             .add(0u32) // EID
@@ -333,8 +278,7 @@ impl Connection {
             .add(0u8) // survival
             .add(-1i8) // no previous gamemode
             .add_many(&["hieronymus:wonderland"]) // world names
-            .nbt(dimension_codec)? // dimension codec
-            .nbt(dimension_type)? // dimension
+            .raw_data(dimension_info) // dimension codec and current dimension
             .add("hieronymus:wonderland") // current world name
             .add(rand::random::<u64>()) // hashed seed
             .varint(0u32) // max players (ignored)
@@ -353,8 +297,9 @@ impl Connection {
             Absolute(420.0),
             Absolute(0.0),
             Absolute(0.0),
-            false
-        ).await?;
+            false,
+        )
+        .await?;
         // prematurely kick
         // self.kick(
         //     r#"{"text":"well... i haven't implemented like, the game yet lol. come back later XD"}"#

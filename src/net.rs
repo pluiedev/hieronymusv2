@@ -1,3 +1,4 @@
+pub mod auth;
 mod handshake;
 mod login;
 mod play;
@@ -18,8 +19,8 @@ use tracing::{debug, instrument, trace, warn};
 use uuid::Uuid;
 
 use crate::{
-    auth::{AuthSession, Keys},
     config::Config,
+    net::auth::{AuthSession, Keys},
     server::ServerHook,
     varint::{self, varint, VarInt},
 };
@@ -71,6 +72,9 @@ impl Connection {
                 debug!("Connection reset");
                 return Ok(());
             }
+            if let Some(cipher) = &mut self.cipher {
+                cipher.decrypt(&mut buf);
+            }
 
             use ::nom::Err;
             match self.read_packet(&buf[..read]).await {
@@ -87,9 +91,14 @@ impl Connection {
         }
     }
 
-    #[instrument(skip_all)]
+    #[instrument(skip(self, input))]
     pub async fn read_packet<'data>(&mut self, mut input: &'data [u8]) -> IResult<&'data [u8], ()> {
         loop {
+            if matches!(self.state, ConnectionState::Handshake) && input.starts_with(b"\xfe\x01") {
+                // legacy ping
+                todo!("legacy ping")
+            }
+
             trace!(?input);
             let (i, data) = length_data(varint::<u32>)(input)?;
             input = i;

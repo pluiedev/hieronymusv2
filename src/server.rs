@@ -1,3 +1,5 @@
+pub mod dimension;
+
 use std::sync::Arc;
 
 use eyre::eyre;
@@ -8,12 +10,16 @@ use tracing::{debug, instrument, trace};
 use uuid::Uuid;
 
 use crate::config::Config;
+
+use self::dimension::DimensionManager;
 pub struct Server {
     rx: mpsc::Receiver<ServerEvent>,
     config: Arc<Config>,
     version: Version,
     players: Vec<Player>,
     favicon: Option<String>,
+
+    dimension_manager: DimensionManager,
 }
 
 impl Server {
@@ -37,6 +43,7 @@ impl Server {
             version: Version::CURRENT,
             players: vec![],
             favicon,
+            dimension_manager: DimensionManager::new(),
         })
     }
 
@@ -75,6 +82,13 @@ impl Server {
                     tx.send(json)
                         .map_err(|_| eyre!("failed to send status data"))?;
                 }
+                Inner::GetDimensionInfo { tx } => {
+                    let mut buf = vec![];
+                    nbt::to_writer(&mut buf, &self.dimension_manager, None)?;
+                    nbt::to_writer(&mut buf, &self.dimension_manager.current_dimension(), None)?;
+                    tx.send(buf)
+                        .map_err(|_| eyre!("failed to send dimension info"))?;
+                }
                 Inner::JoinGame(player) => {
                     debug!(?player, "Player joined");
                     self.players.push(player);
@@ -83,6 +97,39 @@ impl Server {
         }
         Ok(())
     }
+}
+
+#[derive(Clone)]
+pub struct ServerHook(pub mpsc::Sender<ServerEvent>);
+
+impl ServerHook {
+    pub async fn get_server_status(&self) -> eyre::Result<String> {
+        let (tx, rx) = oneshot::channel();
+        self.0
+            .send(ServerEvent(Inner::GetServerStatus { tx }))
+            .await?;
+        Ok(rx.await?)
+    }
+    pub async fn get_dimension_info(&self) -> eyre::Result<Vec<u8>> {
+        let (tx, rx) = oneshot::channel();
+        self.0
+            .send(ServerEvent(Inner::GetDimensionInfo { tx }))
+            .await?;
+        Ok(rx.await?)
+    }
+    pub async fn join_game(&self, player: Player) -> eyre::Result<()> {
+        self.0.send(ServerEvent(Inner::JoinGame(player))).await?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct ServerEvent(Inner);
+#[derive(Debug)]
+enum Inner {
+    GetServerStatus { tx: oneshot::Sender<String> },
+    GetDimensionInfo { tx: oneshot::Sender<Vec<u8>> },
+    JoinGame(Player),
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -117,29 +164,4 @@ impl Ord for Version {
 pub struct Player {
     pub username: String,
     pub uuid: Uuid,
-}
-
-#[derive(Clone)]
-pub struct ServerHook(pub mpsc::Sender<ServerEvent>);
-
-impl ServerHook {
-    pub async fn get_server_status(&self) -> eyre::Result<String> {
-        let (tx, rx) = oneshot::channel();
-        self.0
-            .send(ServerEvent(Inner::GetServerStatus { tx }))
-            .await?;
-        Ok(rx.await?)
-    }
-    pub async fn join_game(&self, player: Player) -> eyre::Result<()> {
-        self.0.send(ServerEvent(Inner::JoinGame(player))).await?;
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-pub struct ServerEvent(Inner);
-#[derive(Debug)]
-enum Inner {
-    GetServerStatus { tx: oneshot::Sender<String> },
-    JoinGame(Player),
 }

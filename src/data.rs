@@ -180,17 +180,12 @@ pub struct IdentifierRef<'a> {
 }
 
 fn invalid_namespace_char(c: &u8) -> bool {
-    match *c {
-        b'0'..=b'9' | b'a'..=b'z' | b'.' | b'_' | b'-' => false,
-        _ => true,
-    }
+    !matches!(*c, b'0'..=b'9' | b'a'..=b'z' | b'.' | b'_' | b'-')
 }
 fn invalid_path_char(c: &u8) -> bool {
-    match *c {
-        b'0'..=b'9' | b'a'..=b'z' | b'.' | b'_' | b'-' | b'/' => false,
-        _ => true,
-    }
+    !matches!(*c, b'0'..=b'9' | b'a'..=b'z' | b'.' | b'_' | b'-' | b'/')
 }
+
 #[derive(Debug, Error)]
 pub enum ParseIdentifierError {
     #[error("Invalid character in namespace: {0}")]
