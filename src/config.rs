@@ -4,6 +4,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use tracing::{debug, warn};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -21,10 +22,10 @@ pub struct Config {
 impl Config {
     pub const DEFAULT_PATH: &'static str = "./config.toml";
 
-    pub fn read_from_default_path() -> eyre::Result<Self> {
+    pub fn read_from_default_path() -> Result<Self, ConfigError> {
         Self::read_from(Self::DEFAULT_PATH)
     }
-    pub fn read_from<P: AsRef<Path>>(path: P) -> eyre::Result<Self> {
+    pub fn read_from<P: AsRef<Path>>(path: P) -> Result<Self, ConfigError> {
         match fs::read_to_string(&path) {
             Ok(s) => {
                 let config = toml::from_str(&s)?;
@@ -55,4 +56,12 @@ impl Config {
     fn default_favicon_path() -> PathBuf {
         "favicon.png".into()
     }
+}
+
+#[derive(Debug, Error)]
+pub enum ConfigError {
+    #[error(transparent)]
+    TomlError(#[from] toml::de::Error),
+    #[error(transparent)]
+    IOError(#[from] std::io::Error),
 }

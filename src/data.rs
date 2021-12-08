@@ -1,8 +1,5 @@
 //! Some data types used by Minecraft.
-
-use std::str::FromStr;
-
-use nom::combinator::map_res;
+use nom::combinator::{map_opt, map_res};
 use nom_derive::{Nom, Parse};
 use serde::Serialize;
 use thiserror::Error;
@@ -47,10 +44,11 @@ pub struct SlotData {
 
 impl TryToResponseField for SlotData {
     type Err = nbt::Error;
-    fn try_to_request_field(&self, builder: &mut crate::net::ResponseBuilder) -> Result<(), Self::Err> {
-        builder
-            .add(self.id)
-            .add(self.count);
+    fn try_to_request_field(
+        &self,
+        builder: &mut crate::net::ResponseBuilder,
+    ) -> Result<(), Self::Err> {
+        builder.add(self.id).add(self.count);
         match &self.nbt {
             Some(nbt) => builder.nbt(nbt)?,
             None => builder.add(0u8), // TAG_End
@@ -145,18 +143,46 @@ impl Identifier {
         }
     }
 }
-impl FromStr for Identifier {
-    type Err = ParseIdentifierError;
+impl TryFrom<&str> for Identifier {
+    type Error = ParseIdentifierError;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    #[inline]
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(IdentifierRef::try_from(value)?.to_owned())
+    }
+}
+impl Parse<&[u8]> for Identifier {
+    fn parse(i: &[u8]) -> nom::IResult<&[u8], Self> {
+        map_res(var_str, Self::try_from)(i)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdentifierRef<'a> {
+    pub namespace: &'a str,
+    pub path: &'a str,
+}
+impl<'a> IdentifierRef<'a> {
+    pub fn to_owned(&self) -> Identifier {
+        Identifier {
+            namespace: self.namespace.into(),
+            path: self.path.into(),
+        }
+    }
+}
+impl<'a> TryFrom<&'a str> for IdentifierRef<'a> {
+    type Error = ParseIdentifierError;
+
+    #[inline]
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
         use ParseIdentifierError::*;
-        if !s.is_ascii() {
+        if !value.is_ascii() {
             return Err(NotAscii);
         }
 
-        let mut split = s.split(':');
-        let namespace = split.next().ok_or(ExpectedSeparator)?.to_string();
-        let path = split.next().ok_or(ExpectedSeparator)?.to_string();
+        let mut split = value.split(':');
+        let namespace = split.next().ok_or(ExpectedSeparator)?;
+        let path = split.next().ok_or(ExpectedSeparator)?;
 
         if let Some(c) = namespace.bytes().find(invalid_namespace_char) {
             return Err(InvalidCharacterInNamespace(char::from(c)));
@@ -167,16 +193,10 @@ impl FromStr for Identifier {
         Ok(Self { namespace, path })
     }
 }
-impl Parse<&[u8]> for Identifier {
-    fn parse(i: &[u8]) -> nom::IResult<&[u8], Self> {
-        map_res(var_str, Self::from_str)(i)
+impl<'a> Parse<&'a [u8]> for IdentifierRef<'a> {
+    fn parse(i: &'a [u8]) -> nom::IResult<&'a [u8], Self> {
+        map_res(var_str, Self::try_from)(i)
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IdentifierRef<'a> {
-    pub namespace: &'a str,
-    pub path: &'a str,
 }
 
 fn invalid_namespace_char(c: &u8) -> bool {
@@ -196,4 +216,30 @@ pub enum ParseIdentifierError {
     NotAscii,
     #[error("Expected separator `:`")]
     ExpectedSeparator,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Hand {
+    Mainhand,
+    Offhand,
+}
+impl Parse<&[u8]> for Hand {
+    fn parse(i: &[u8]) -> nom::IResult<&[u8], Self> {
+        map_opt(varint::<u32>, |v| match v {
+            0 => Some(Self::Mainhand),
+            1 => Some(Self::Offhand),
+            _ => None,
+        })(i)
+    }
+}
+
+#[derive(Debug, Nom)]
+#[repr(u8)]
+pub enum Direction {
+    Bottom,
+    Top,
+    North,
+    South,
+    West,
+    East
 }

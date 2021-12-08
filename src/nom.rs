@@ -36,6 +36,20 @@ macro_rules! match_id_and_forward {
     }};
 }
 
+#[macro_export]
+macro_rules! parse_impl_for_bitflags {
+    ($ty:ty) => {
+        parse_impl_for_bitflags!($ty, nom::number::streaming::be_u8);
+    };
+    ($ty:ty,$func:expr) => {
+        impl Parse<&[u8]> for $ty {
+            fn parse(i: &[u8]) -> IResult<&[u8], Self> {
+                map_opt($func, Self::from_bits)(i)
+            }
+        }
+    };
+}
+
 //region Generalized idioms
 
 /// A parser that tries to parse a [`bool`] value from a read [`u8`].
