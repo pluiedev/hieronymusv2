@@ -1,6 +1,8 @@
 use std::{
     fs::{self, File},
-    path::{Path, PathBuf}, io::Write, time::SystemTime,
+    io::Write,
+    path::{Path, PathBuf},
+    time::SystemTime,
 };
 
 use serde::{Deserialize, Serialize};

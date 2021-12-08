@@ -2,7 +2,6 @@ use async_trait::async_trait;
 use bitflags::bitflags;
 use nom::{
     combinator::{map_opt, rest},
-    number::streaming::be_u8,
     IResult,
 };
 use nom_derive::{Nom, Parse};
@@ -14,8 +13,9 @@ use crate::{
     data::{Direction, Hand, Identifier, IdentifierRef, Position, Slot},
     match_id_and_forward,
     nom::{boolean, maybe, var_str, var_str_with_max_length},
+    parse_impl_for_bitflags,
     server::Player,
-    varint::varint, parse_impl_for_bitflags,
+    varint::varint,
 };
 
 use super::{BoxedPacket, Connection, Packet, ResponseBuilder};

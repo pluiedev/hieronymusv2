@@ -96,7 +96,11 @@ impl Packet for EncryptionResponse<'_> {
 
 impl Connection {
     #[instrument(skip(self, cipher))]
-    async fn login_success(&mut self, player: Player, cipher: Option<AesCipher>) -> eyre::Result<()> {
+    async fn login_success(
+        &mut self,
+        player: Player,
+        cipher: Option<AesCipher>,
+    ) -> eyre::Result<()> {
         debug!("Login successful: transitioning into Play state");
         self.cipher = cipher;
         self.state = ConnectionState::Play;
@@ -112,4 +116,3 @@ impl Connection {
         Ok(())
     }
 }
-
