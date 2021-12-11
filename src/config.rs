@@ -11,7 +11,7 @@ use tracing::{debug, warn};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
-    #[serde(default = "Config::default_is_online")]
+    #[serde(default = "Config::default_online_mode")]
     pub online_mode: bool,
     #[serde(default = "Config::default_max_players")]
     pub max_players: usize,
@@ -46,7 +46,7 @@ impl Config {
             }
         }
     }
-    fn default_is_online() -> bool {
+    fn default_online_mode() -> bool {
         true
     }
     fn default_max_players() -> usize {
