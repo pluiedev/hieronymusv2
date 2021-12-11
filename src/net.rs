@@ -41,7 +41,8 @@ pub struct Connection {
 
     keys: Keys,
     auth_session: Option<AuthSession>,
-    cipher: Option<AesCipher>,
+    encrypt_cipher: Option<AesCipher>,
+    decrypt_cipher: Option<AesCipher>,
 }
 
 impl Connection {
@@ -59,7 +60,8 @@ impl Connection {
 
             keys,
             auth_session: None,
-            cipher: None,
+            encrypt_cipher: None,
+            decrypt_cipher: None,
         }
     }
 
@@ -72,8 +74,10 @@ impl Connection {
                 debug!("Connection reset");
                 return Ok(());
             }
-            if let Some(cipher) = &mut self.cipher {
+            if let Some(cipher) = &mut self.decrypt_cipher {
+                trace!("encrypted:\n{}", buf.to_hex(16));
                 cipher.decrypt(&mut buf);
+                trace!("decrypted:\n{}", buf.to_hex(16));
             }
 
             use ::nom::Err;
@@ -95,8 +99,8 @@ impl Connection {
     // I really have no idea why this line kept glitching in and out. Sometimes
     // `skip_all` errors out, sometimes `skip(self, input)` errors out, it makes
     // no freaking sense. Someone help.
-    //#[instrument(skip(self, input))]
-    #[instrument(skip_all)]
+    #[instrument(skip(self, input))]
+    //#[instrument(skip_all)]
     pub async fn read_packet<'data>(&mut self, mut input: &'data [u8]) -> IResult<&'data [u8], ()> {
         loop {
             if matches!(self.state, ConnectionState::Handshake) && input.starts_with(b"\xfe\x01") {
@@ -262,7 +266,7 @@ impl ResponseBuilder {
         trace!(?header);
         trace!("\n{}", data.to_hex(16));
 
-        if let Some(cipher) = &mut conn.cipher {
+        if let Some(cipher) = &mut conn.encrypt_cipher {
             cipher.encrypt(&mut header);
             cipher.encrypt(data);
         }

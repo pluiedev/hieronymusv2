@@ -10,7 +10,7 @@ use num_traits::FromPrimitive;
 use tracing::instrument;
 
 use crate::{
-    data::{Direction, Hand, Identifier, IdentifierRef, Position, Slot},
+    data::{Direction, Hand, Identifier, Position, Slot, Arm},
     match_id_and_forward,
     nom::{boolean, maybe, var_str, var_str_with_max_length},
     parse_impl_for_bitflags,
@@ -132,11 +132,9 @@ struct ClientSettings<'a> {
     #[nom(Parse = "boolean")]
     chat_colors: bool,
     displayed_skin_parts: DisplayedSkinParts,
-    main_hand: Hand,
+    main_arm: Arm,
     #[nom(Parse = "boolean")]
     enable_text_filtering: bool,
-    #[nom(Parse = "boolean")]
-    allow_server_listings: bool,
 }
 #[async_trait]
 impl Packet for ClientSettings<'_> {

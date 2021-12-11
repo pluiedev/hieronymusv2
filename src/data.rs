@@ -1,6 +1,8 @@
 //! Some data types used by Minecraft.
 use nom::combinator::{map_opt, map_res};
 use nom_derive::{Nom, Parse};
+use num_derive::FromPrimitive;
+use num_traits::FromPrimitive;
 use serde::Serialize;
 use thiserror::Error;
 
@@ -218,18 +220,25 @@ pub enum ParseIdentifierError {
     ExpectedSeparator,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
+pub enum Arm {
+    Left,
+    Right,
+}
+impl Parse<&[u8]> for Arm {
+    fn parse(i: &[u8]) -> nom::IResult<&[u8], Self> {
+        map_opt(varint::<u32>, Self::from_u32)(i)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
 pub enum Hand {
     Mainhand,
     Offhand,
 }
 impl Parse<&[u8]> for Hand {
     fn parse(i: &[u8]) -> nom::IResult<&[u8], Self> {
-        map_opt(varint::<u32>, |v| match v {
-            0 => Some(Self::Mainhand),
-            1 => Some(Self::Offhand),
-            _ => None,
-        })(i)
+        map_opt(varint::<u32>, Self::from_u32)(i)
     }
 }
 

@@ -53,7 +53,7 @@ impl Packet for LoginStart<'_> {
                 uuid: Uuid::new_v4(),
                 username: self.username.to_string(),
             };
-            conn.login_success(player, None).await?;
+            conn.login_success(player, None, None).await?;
         }
 
         Ok(())
@@ -88,21 +88,24 @@ impl Packet for EncryptionResponse<'_> {
             username: auth_response.name,
             uuid: auth_response.id,
         };
-        let cipher = AesCipher::new_from_slices(&shared_secret, &shared_secret)?;
-        conn.login_success(player, Some(cipher)).await?;
+        let encrypt_cipher = AesCipher::new_from_slices(&shared_secret, &shared_secret)?;
+        let decrypt_cipher = AesCipher::new_from_slices(&shared_secret, &shared_secret)?;
+        conn.login_success(player, Some(encrypt_cipher), Some(decrypt_cipher)).await?;
         Ok(())
     }
 }
 
 impl Connection {
-    #[instrument(skip(self, cipher))]
+    #[instrument(skip(self, encrypt_cipher, decrypt_cipher))]
     async fn login_success(
         &mut self,
         player: Player,
-        cipher: Option<AesCipher>,
+        encrypt_cipher: Option<AesCipher>,
+        decrypt_cipher: Option<AesCipher>,
     ) -> eyre::Result<()> {
         debug!("Login successful: transitioning into Play state");
-        self.cipher = cipher;
+        self.encrypt_cipher = encrypt_cipher;
+        self.decrypt_cipher = decrypt_cipher;
         self.state = ConnectionState::Play;
 
         // Login success
