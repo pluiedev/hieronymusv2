@@ -4,6 +4,7 @@ use nom_derive::{Nom, Parse};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use serde::Serialize;
+use smol_str::SmolStr;
 use thiserror::Error;
 
 use crate::{net::TryToResponseField, nom::var_str, varint::varint};
@@ -133,8 +134,8 @@ angular_impl!(
 // TODO: implement some kind of intern system/arena memory management
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Identifier {
-    pub namespace: String,
-    pub path: String,
+    pub namespace: SmolStr,
+    pub path: SmolStr,
 }
 
 impl Identifier {
