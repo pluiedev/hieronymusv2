@@ -99,8 +99,8 @@ impl Connection {
     // I really have no idea why this line kept glitching in and out. Sometimes
     // `skip_all` errors out, sometimes `skip(self, input)` errors out, it makes
     // no freaking sense. Someone help.
-    #[instrument(skip(self, input))]
-    //#[instrument(skip_all)]
+    //#[instrument(skip(self, input))]
+    #[instrument(skip_all)]
     pub async fn read_packet<'data>(&mut self, mut input: &'data [u8]) -> IResult<&'data [u8], ()> {
         loop {
             if matches!(self.state, ConnectionState::Handshake) && input.starts_with(b"\xfe\x01") {
