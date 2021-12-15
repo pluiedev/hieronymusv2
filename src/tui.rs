@@ -11,7 +11,7 @@ use tui::{
     Frame, Terminal,
 };
 use tui_logger::TuiLoggerWidget;
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthStr, UnicodeWidthChar};
 
 pub struct Tui {
     terminal: Terminal<Backend>,
@@ -121,7 +121,7 @@ impl TuiInner {
         match self.input_mode {
             InputMode::Normal => {}
             InputMode::Input => f.set_cursor(
-                log_and_input[1].x + self.input.current().width() as u16 + 2,
+                log_and_input[1].x + self.input.apparent_cursor() as u16 + 2,
                 log_and_input[1].y + 1,
             ),
             InputMode::Log => {}
@@ -146,6 +146,7 @@ impl TuiInner {
 
 struct InputField {
     input: String,
+    cursor: usize,
     history: Vec<String>,
     history_preview: Option<usize>,
 }
@@ -156,6 +157,7 @@ impl InputField {
             input: String::with_capacity(256),
             history: vec![],
             history_preview: None,
+            cursor: 0,
         }
     }
     fn current(&self) -> &str {
@@ -163,22 +165,33 @@ impl InputField {
             .and_then(|ind| self.history.iter().rev().nth(ind))
             .unwrap_or(&self.input)
     }
+    fn apparent_cursor(&self) -> usize {
+        self.cursor.min(self.current().width())
+    }
     fn begin(&mut self) {}
     fn handle_events(&mut self, event: KeyEvent) {
         match event.code {
             KeyCode::Char(ch) => {
                 self.history_preview = None;
-                self.input.push(ch);
+                self.cursor = self.apparent_cursor(); // resync cursors.
+                self.input.insert(self.cursor, ch);
+                self.cursor += ch.width().unwrap_or(0);
+                trace!(self.cursor);
             }
             KeyCode::Backspace => {
                 self.history_preview = None;
-                self.input.pop();
+                self.cursor = self.apparent_cursor(); // resync cursors.
+                if let Some(ch ) = self.input.pop() {
+                    self.cursor -= ch.width().unwrap_or(0);
+                }
+                trace!(self.cursor);
             }
             KeyCode::Enter => {
                 //TODO
                 self.history.push(self.current().to_string());
                 self.history_preview = None;
                 self.input.clear();
+                self.cursor = 0;
             }
             KeyCode::Up => {
                 let max_index = self.history.len().checked_sub(1).unwrap_or(0);
@@ -186,11 +199,17 @@ impl InputField {
                     Some(ind) => max_index.min(ind + 1),
                     None => 0,
                 });
-                trace!(len = self.history.len(), self.history_preview)
+                trace!(self.cursor, len = self.history.len(), self.history_preview)
             }
             KeyCode::Down => {
                 self.history_preview = self.history_preview.and_then(|x| x.checked_sub(1));
-                trace!(self.history_preview)
+                trace!(self.cursor, self.history_preview)
+            }
+            KeyCode::Left => {
+                self.cursor = self.cursor.checked_sub(1).unwrap_or(0)
+            }
+            KeyCode::Right => {
+                self.cursor = self.current().width().min(self.cursor + 1);
             }
             _ => {}
         }
