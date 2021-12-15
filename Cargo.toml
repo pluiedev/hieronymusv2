@@ -44,6 +44,7 @@ tracing-honeycomb = "0.4.2"
 tracing-subscriber = { version = "0.3.3", features = ["env-filter"] }
 tui = { version = "0.16.0", default-features = false, features = ["crossterm"] }
 tui-logger = "0.6.5"
+unicode-width = "0.1.9"
 uuid = { version = "0.8.2", features = ["v4", "serde"] }
 
 [features]

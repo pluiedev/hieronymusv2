@@ -673,6 +673,7 @@ dependencies = [
  "tracing-subscriber 0.3.3",
  "tui",
  "tui-logger",
+ "unicode-width",
  "uuid",
 ]
 
